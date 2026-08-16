@@ -1,0 +1,80 @@
+{
+  "database_path": {
+    "description": "chatlog.db 路径",
+    "type": "string",
+    "default": "",
+    "hint": "留空则自动定位 data/plugin_data/astrbot_plugin_chatlogger/chatlog.db；本插件对该库只读"
+  },
+  "timezone": {
+    "description": "统计时区",
+    "type": "string",
+    "default": "Asia/Shanghai",
+    "hint": "今日/本周/本月、小时分布与活跃天数均按此时区划分（IANA 时区名）"
+  },
+  "default_top_n": {
+    "description": "默认榜单条数",
+    "type": "int",
+    "default": 10,
+    "hint": "排行/关键词/Emoji 等未指定条数时的默认值"
+  },
+  "max_query_days": {
+    "description": "最大查询天数",
+    "type": "int",
+    "default": 90,
+    "hint": "超过该天数的时间范围将被拒绝，防止超大范围扫描"
+  },
+  "max_messages_scan": {
+    "description": "单次统计最大扫描消息数",
+    "type": "int",
+    "default": 50000,
+    "hint": "词云/关键词等需要取文本的统计的上限保护，超过时保留最新部分"
+  },
+  "wordcloud_enabled": {
+    "description": "启用词云图片生成",
+    "type": "bool",
+    "default": true,
+    "hint": "关闭后 /词云 输出文字版词频"
+  },
+  "font_path": {
+    "description": "词云字体路径",
+    "type": "string",
+    "default": "",
+    "hint": "留空则使用插件内置 assets/fonts/ 字体，其次探测系统 CJK 字体"
+  },
+  "stopwords_path": {
+    "description": "自定义停用词文件",
+    "type": "string",
+    "default": "",
+    "hint": "每行一词，# 开头为注释；与内置停用词合并生效"
+  },
+  "extra_stopwords": {
+    "description": "附加停用词",
+    "type": "list",
+    "default": [],
+    "hint": "在列表中追加不想出现在词云/关键词里的词"
+  },
+  "wordcloud_trigger_enabled": {
+    "description": "启用个人词云口语触发",
+    "type": "bool",
+    "default": true,
+    "hint": "开启后「我的词云」「我的历史词云」「@某人 词云」可直接触发个人词云，无需斜杠命令（仍需 @机器人或唤醒前缀）"
+  },
+  "exclude_waked_messages": {
+    "description": "统计排除唤醒消息",
+    "type": "bool",
+    "default": true,
+    "hint": "排除 waked_bot=1 的消息（斜杠命令、@机器人、引用机器人、私聊），防止命令本身污染关键词/发言榜等统计"
+  },
+  "profile_scope": {
+    "description": "用户画像统计范围",
+    "type": "string",
+    "default": "current_group",
+    "hint": "current_group 为仅统计当前群（防止跨群数据泄露）；all 为全部会话"
+  },
+  "cache_ttl_minutes": {
+    "description": "画像缓存时间",
+    "type": "int",
+    "default": 30,
+    "hint": "用户/群画像内存缓存的有效分钟数，0 关闭；重启后重算"
+  }
+}
