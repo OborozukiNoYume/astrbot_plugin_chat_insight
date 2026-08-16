@@ -1,14 +1,113 @@
-# astrbot-plugin-helloworld
+# astrbot_plugin_chat_insight · 聊天洞察
 
-AstrBot 插件模板 / A template plugin for AstrBot plugin feature
+> Chat Insight = ChatLogger 的只读统计前端。
+> 把已经积累的聊天数据，变成用户看得懂的统计、排行、关键词和画像。
+> 合并并取代 [astrbot_plugin_chat_statistics](https://github.com/OborozukiNoYume) 与 astrbot_plugin_user_profile。
 
-> [!NOTE]
-> This repo is just a template of [AstrBot](https://github.com/AstrBotDevs/AstrBot) Plugin.
-> 
-> [AstrBot](https://github.com/AstrBotDevs/AstrBot) is an agentic assistant for both personal and group conversations. It can be deployed across dozens of mainstream instant messaging platforms, including QQ, Telegram, Feishu, DingTalk, Slack, LINE, Discord, Matrix, etc. In addition, it provides a reliable and extensible conversational AI infrastructure for individuals, developers, and teams. Whether you need a personal AI companion, an intelligent customer support agent, an automation assistant, or an enterprise knowledge base, AstrBot enables you to quickly build AI applications directly within your existing messaging workflows.
+## 定位与架构
 
-# Supports
+```
+AstrBot → ChatLogger → chatlog.db → Chat Insight（本插件，只读）
+```
 
-- [AstrBot Repo](https://github.com/AstrBotDevs/AstrBot)
-- [AstrBot Plugin Development Docs (Chinese)](https://docs.astrbot.app/dev/star/plugin-new.html)
-- [AstrBot Plugin Development Docs (English)](https://docs.astrbot.app/en/dev/star/plugin-new.html)
+- ChatLogger 是唯一聊天数据来源；本插件**不监听消息、不建第二套聊天库**。
+- 对 `chatlog.db` **严格只读**（`mode=ro` 连接，契约见 ChatLogger 的 `QUERY_GUIDE.md`，要求 schema `user_version >= 3`），不修改其任何数据与结构。
+- 分层：`commands(main.py) → service → repository → SQLite`，SQL 全部集中在 repository，命令层不写 SQL。
+- 查询在独立线程执行（`asyncio.to_thread`），不阻塞事件循环；ChatLogger 未安装/数据库缺失时插件照常加载，命令返回清晰提示。
+- `insight/` 包为纯 Python（不依赖 astrbot），可独立测试；所有 `json_each` 查询带 `json_valid` 防护（content_json 可能被截断为非法 JSON）。
+
+## 命令
+
+时间参数统一语法：`今日`、`昨日`、`本周`、`上周`、`本月`、`上月`、`本季度`、`上季度`、`半年`（最近 6 个自然月）、`今年`、`历史`/`总榜`、`N天`（如 `7天`）。群统计默认 `7天`，用户画像默认 `历史`（全期）。
+
+**公开命令（所有群友可用）**
+
+| 命令 | 别名 | 参数 | 说明 |
+|---|---|---|---|
+| `/发言排行` | `rank` / `发言榜` | `[group <群号>] [时间] [N]` | 发言榜：数量 / 排名 / 占比 |
+| `/词云` | `wordcloud` | `[user <QQ号\|me>] [group <群号>] [时间] [N]` | 词云图片；`user me` 为个人词云 |
+| `/用户统计` | `user` | `[@某人] [user <QQ号\|me>] [时间]` | 综合卡片（查他人需管理员） |
+| `/群画像` | `group_profile` | — | 当前群画像（发言成员数 ≠ 群成员总数） |
+
+**用户画像组 `/用户画像`（别名 `profile`）**
+
+| 子命令 | 说明 |
+|---|---|
+| `me [@某人] [时间]` | 综合画像（查他人需管理员） |
+| `活跃` / `activity` | 24h 分布 / 昼夜 / 周末 / 连续活跃 |
+| `关键词` / `keywords` | 讨论关键词（全期 vs 近 30 天） |
+| `风格` / `style` | 长度分位 / 连发轮次 / 媒体偏好 |
+| `互动` / `social` | 回复 / @ 互动网络 |
+| `bot` | Bot 互动画像（私聊统计为全局口径） |
+| `昵称` / `names` | 昵称历史 |
+| `状态` / `刷新` | 契约检查 / 清缓存（管理员） |
+
+**管理命令组 `/聊天统计`（别名 `统计` / `chatstats`，仅管理员）**：`总览`、`趋势`、`时段`、`关键词`、`emoji`、`表情`、`类型`、`长度`、`转发`、`关键词趋势`、`昼夜`——与原 chat_statistics 完全一致。
+
+个人词云口语触发（默认开启，`wordcloud_trigger_enabled` 可关）：一律需要 @机器人或唤醒前缀——`@机器人 我的词云`、`@机器人 我的历史词云`、`@机器人 @某人 历史词云`；裸「词云」与普通聊天一律不响应。
+
+## 统计口径
+
+- **用户消息**：恒过滤 `sender_type='user'`，机器人消息不计入任何统计。
+- **唤醒消息（waked_bot）分场景**：群统计（排行/总览/关键词/群画像）默认排除 `waked_bot=1`（斜杠命令、@机器人、引用机器人、私聊），防止命令文本污染统计，受 `exclude_waked_messages` 配置控制；**用户画像的行为统计（活跃/风格/互动/Bot）不排除**——唤醒 Bot 本身是用户行为；用户画像的关键词恒排除。
+- **关键词 / 词云**：取 `content_json` 的 `plain` 段（结构化文本），jieba 分词后按 token 出现次数计数；过滤 URL、纯数字、标点、单字、停用词。
+- **Emoji**：Unicode Emoji 用 emoji 库按图形簇匹配（正确处理 ZWJ 组合 / VS16）；QQ 经典表情按 face ID 口径 SQL 聚合。
+- **消息长度**：`LENGTH(content)` 字符长度，≠ 汉字字数；纯图片/语音等空文本消息不参与。
+- **时间**：`ts` 为 UTC epoch 秒，今日/本周/小时分布/活跃天数均按配置时区（默认 `Asia/Shanghai`）在应用层换算；周为周一起始。
+- **措辞纪律**：只呈现可验证的频次/分布事实——「高频互动对象」而非「好友」，「主要讨论关键词」而非「兴趣」，不推导心理标签。
+- **隐私**：用户画像默认 `current_group` 范围（在群 A 查询不暴露群 B 数据）；查他人需管理员；Bot 画像的私聊统计为全局口径（输出注明）。
+
+## 明确不属于本插件（负面清单）
+
+```
+❌ 聊天记录搜索      ❌ Memory / 自动记忆     ❌ RAG / Embedding
+❌ 用户长期偏好      ❌ 人格判断 / 情绪分析    ❌ LLM 自动画像
+❌ LLM 前置 Context  ❌ 复杂社交网络分析       ❌ 群成员真实人数
+```
+
+历史信息 → 记忆 → 召回 → LLM Context 这条链路属于记忆类插件（如 LivingMemory）；
+本插件只负责：历史聊天 → 统计 → 用户主动查询。
+
+## 配置
+
+| 配置项 | 默认 | 说明 |
+|---|---|---|
+| `database_path` | 空（自动定位） | chatlog.db 路径，只读 |
+| `timezone` | `Asia/Shanghai` | 统计时区（IANA 名） |
+| `default_top_n` | `10` | 榜单/关键词默认条数 |
+| `max_query_days` | `90` | 单次查询最大天数 |
+| `max_messages_scan` | `50000` | 词云/关键词取文本上限，超出保留最新部分 |
+| `wordcloud_enabled` | `true` | 关闭后 `/词云` 输出文字版词频 |
+| `font_path` | 空（内置字体） | 词云字体；内置 `assets/fonts/NotoSansSC.ttf` |
+| `stopwords_path` / `extra_stopwords` | 空 / `[]` | 自定义停用词 |
+| `wordcloud_trigger_enabled` | `true` | 个人词云口语触发开关 |
+| `exclude_waked_messages` | `true` | 群统计排除唤醒消息 |
+| `profile_scope` | `current_group` | 用户画像范围（`all` 为全部会话） |
+| `cache_ttl_minutes` | `30` | 画像内存缓存分钟数，`0` 关闭 |
+
+## 已知限制
+
+- 时区带夏令时（DST）的地区，天/小时桶按区间起点的固定偏移换算，跨 DST 切换日有近似（中国时区无影响）。
+- 按天趋势最多约一个季度（92 天）。
+- 「最常被谁回复」（`reply_user_id` 无索引）与「@ 网络」（`json_each` 展开）为已知全扫描，已限群范围 + 90 天时间窗；变慢后由 chatlogger 上游按缓建预案加索引。
+- 用户风格的连发统计需按 `(user_id, ts)` 索引拉取该用户全部 ts（纯整数序列）；活跃大户首次查询为秒级，靠 TTL 缓存缓解。
+- QQ 经典表情以 face ID 呈现，不做 ID→名称映射。
+- 词云 PNG 按区间命名写入 `plugin_data`，长期使用建议定期清理。
+
+## 部署
+
+1. 依赖 ChatLogger 插件（数据来源）；首次加载时 AstrBot 自动安装 `requirements.txt`（jieba / wordcloud / emoji）。
+2. 将本目录放入（或符号链接到）`data/plugins/astrbot_plugin_chat_insight`。
+3. 若此前使用 chat_statistics / user_profile，请停用或移除它们以避免命令冲突（`/词云`、`/统计`、`/profile` 等命令名重叠）。
+
+## 开发
+
+```bash
+python -m pytest tests/ -q   # 107 个用例：契约/时区/口径/画像/坏JSON/边界
+```
+
+包结构：`insight/`（纯 Python）：`db`（只读连接）· `timeutil`（唯一时间实现）· `textproc`（清洗/分词/Emoji）· `repository`（全部 SQL）· `service`（业务聚合）· `render`（渲染与降级）· `colloquial`（口语触发匹配）· `cache`（画像 TTL 缓存）。
+
+## License
+
+AGPL-3.0
