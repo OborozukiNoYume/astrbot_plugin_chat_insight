@@ -242,10 +242,11 @@ class ChatlogRepository:
     # ---------- 活跃度趋势（群与用户共用聚合形态） ----------
 
     def get_activity_by_day(
-        self, r: TimeRange, group_id=None, user_id=None, offset_seconds: int = 0
+        self, r: TimeRange, group_id=None, user_id=None, offset_seconds: int = 0,
+        waked: bool | None = None,
     ) -> list[DayActivity]:
         """按本地自然日聚合消息量（与活跃用户数，仅群维度时有意义）。天桶 = (ts+off)//86400。"""
-        where, params = self._where(r, group_id, user_id)
+        where, params = self._where(r, group_id, user_id, waked=waked)
         rows = self._query(
             f"""
             SELECT CAST((ts + ?) / 86400 AS INTEGER) AS d,
@@ -266,10 +267,11 @@ class ChatlogRepository:
         ]
 
     def get_activity_by_hour(
-        self, r: TimeRange, group_id=None, user_id=None, offset_seconds: int = 0
+        self, r: TimeRange, group_id=None, user_id=None, offset_seconds: int = 0,
+        waked: bool | None = None,
     ) -> list[int]:
         """24 小时消息量分布（本地时区），返回长度 24 的列表。"""
-        where, params = self._where(r, group_id, user_id)
+        where, params = self._where(r, group_id, user_id, waked=waked)
         rows = self._query(
             f"""
             SELECT CAST((ts + ?) % 86400 / 3600 AS INTEGER) AS h, COUNT(*) AS c
@@ -309,6 +311,17 @@ class ChatlogRepository:
         else:
             cond = f"{expr_a} >= ? OR {expr_a} < ?"
         return cond, [offset_seconds, hour_from, offset_seconds, hour_to]
+
+    def count_by_hour(
+        self, r: TimeRange, group_id, hour_from: int, hour_to: int, offset_seconds: int
+    ) -> int:
+        """与 fetch_texts_by_hour 完全同口径的消息计数。"""
+        cond, cond_params = self._hour_cond(hour_from, hour_to, offset_seconds)
+        where, params = self._where(r, group_id, extra=[cond])
+        row = self._query(
+            f"SELECT COUNT(*) FROM messages WHERE {where}", params + cond_params
+        )
+        return int(row[0][0])
 
     def fetch_texts_by_hour(
         self,
@@ -464,12 +477,14 @@ class ChatlogRepository:
         self, r: TimeRange, user_id, group_id=None, offset_seconds: int = 0
     ) -> dict:
         """活跃规律原料：24 小时分布 + 按天 (date, count) 列表（量级=活跃天数）。
-        周几分布与连续活跃由 service 从日期列表计算。"""
+        周几分布与连续活跃由 service 从日期列表计算。行为统计不排除唤醒消息。"""
         hours = self.get_activity_by_hour(
-            r, group_id=group_id, user_id=user_id, offset_seconds=offset_seconds
+            r, group_id=group_id, user_id=user_id, offset_seconds=offset_seconds,
+            waked=False,
         )
         by_day = self.get_activity_by_day(
-            r, group_id=group_id, user_id=user_id, offset_seconds=offset_seconds
+            r, group_id=group_id, user_id=user_id, offset_seconds=offset_seconds,
+            waked=False,
         )
         return {"hour_counts": hours, "by_day": [(d.date, d.messages) for d in by_day]}
 
@@ -660,16 +675,18 @@ class ChatlogRepository:
 
     def get_group_meta(self, group_id) -> tuple[str, int, int, int, int]:
         """(群名, 消息量, 活跃人数, 首条, 末条)。活跃人数=有过发言的 user 身份数，
-        不等于平台群成员总数——数据库没有成员列表，绝不伪造。"""
+        不等于平台群成员总数——数据库没有成员列表，绝不伪造。
+        口径随群统计（默认排除唤醒消息，受 exclude_waked 配置控制）。"""
         gid = str(group_id)
         name_row = self._query(
             "SELECT group_name FROM groups WHERE group_id = ?", [gid]
         )
         name = (name_row[0][0] if name_row else "") or gid
+        waked_cond = "AND waked_bot = 0" if self.exclude_waked else ""
         row = self._query(
-            """
+            f"""
             SELECT COUNT(*), COUNT(DISTINCT user_id), MIN(ts), MAX(ts)
-            FROM messages WHERE group_id = ? AND sender_type = 'user'
+            FROM messages WHERE group_id = ? AND sender_type = 'user' {waked_cond}
             """,
             [gid],
         )[0]

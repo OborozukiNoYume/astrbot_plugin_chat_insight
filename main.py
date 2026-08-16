@@ -285,7 +285,7 @@ class ChatInsight(Star):
         if err:
             return None, f"⛔ {err}"
         gid = self._profile_group_id(event)
-        r = svc.resolve(time_spec)
+        r = svc.resolve(time_spec or "all")  # 用户画像默认全期，群统计默认近 7 天
         return (uid, gid, r), None
 
     async def _build_user(self, kind: str, fn_name: str, *args):

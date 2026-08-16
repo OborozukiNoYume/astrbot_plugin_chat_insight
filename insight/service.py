@@ -440,10 +440,10 @@ class StatisticsService:
         weekdays = [0] * 7
         days: list[date] = []
         by_day = raw["by_day"]
-        for date_str, _c in by_day:
+        for date_str, c in by_day:
             d = date.fromisoformat(date_str)
             days.append(d)
-            weekdays[d.weekday()] += 1
+            weekdays[d.weekday()] += c  # 周几分布按消息数加权，非天数
         day = sum(hours[h] for h in DAY_HOURS)
         peak = sorted((h for h in range(24) if hours[h] > 0), key=lambda h: -hours[h])[:3]
         peak.sort()
