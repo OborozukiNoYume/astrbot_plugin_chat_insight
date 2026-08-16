@@ -173,9 +173,10 @@ class ChatInsight(Star):
 
     @staticmethod
     def _parse_scope_tokens(tokens: list[str]):
-        """词云/排行参数解析：user <id|me> / group <群号> / 时间 / 纯数字(条数)。"""
+        """词云/排行参数解析：用户 <QQ号|我> / 我 / 全群 / 群 <群号> / 时间 / 纯数字(条数)。"""
         user_id = group_id = time_spec = None
         top_n = None
+        all_group = False
         i = 0
         while i < len(tokens):
             t = str(tokens[i])
@@ -184,6 +185,12 @@ class ChatInsight(Star):
                 v = str(tokens[i + 1])
                 user_id = "me" if v.lower() in ("me", "我") else v
                 i += 2
+            elif low in ("me", "我", "自己"):
+                user_id = "me"
+                i += 1
+            elif t in ("全群", "本群"):
+                all_group = True
+                i += 1
             elif low in ("group", "群", "g") and i + 1 < len(tokens):
                 group_id = str(tokens[i + 1])
                 i += 2
@@ -195,17 +202,17 @@ class ChatInsight(Star):
                 i += 1
             else:
                 raise ServiceError(
-                    f"无法识别的参数「{t}」。支持：user <QQ号|me>、group <群号>、"
-                    "时间（今日/昨日/本周/上月/本季度/半年/今年/历史/N天）、条数（数字）。"
+                    f"无法识别的参数「{t}」。支持：用户 <QQ号|我>（或 user me）、全群、"
+                    "群 <群号>（或 group）、时间（今日/昨日/本周/上月/本季度/半年/今年/历史/N天）、条数（数字）。"
                 )
-        return user_id, group_id, time_spec, top_n
+        return user_id, group_id, time_spec, top_n, all_group
 
     @staticmethod
     def _resolve_user(event: AstrMessageEvent, user_id: str | None) -> str | None:
         if user_id == "me":
             uid = event.get_sender_id()
             if not uid:
-                raise ServiceError("无法识别你的用户 ID，请显式指定 user <QQ号>。")
+                raise ServiceError("无法识别你的用户 ID，请显式指定 用户 <QQ号>。")
             return uid
         return user_id
 
@@ -266,7 +273,7 @@ class ChatInsight(Star):
                 i += 1
             else:
                 raise ServiceError(
-                    f"无法识别的参数「{t}」。支持：user <QQ号|me>、"
+                    f"无法识别的参数「{t}」。支持：用户 <QQ号|我>（或 user me）、"
                     "时间（今日/本周/本月/今年/历史/N天）。"
                 )
         return user_id, time_spec
@@ -336,8 +343,15 @@ class ChatInsight(Star):
     async def _wordcloud_impl(self, event: AstrMessageEvent, tokens: list[str]):
         try:
             svc = self._svc()
-            user_id, group_id, time_spec, top_n = self._parse_scope_tokens(tokens)
+            user_id, group_id, time_spec, top_n, all_group = self._parse_scope_tokens(tokens)
             user_id = self._resolve_user(event, user_id)
+            # @目标 优先：`@某人 /词云 7天` = 查被@者的词云
+            at_target = self._at_target(event)
+            if at_target:
+                user_id = at_target
+            # 默认查自己；「全群」或显式群号才是群维度词云
+            if user_id is None and not all_group:
+                user_id = self._resolve_user(event, "me")
             spec, n = self._normalize_args(time_spec, top_n)
             r = svc.resolve(spec)
             scope_gid = group_id if group_id is not None else event.get_group_id()
@@ -365,7 +379,7 @@ class ChatInsight(Star):
     async def _rank_impl(self, event: AstrMessageEvent, tokens: list[str]):
         try:
             svc = self._svc()
-            _, group_id, time_spec, top_n = self._parse_scope_tokens(tokens)
+            _, group_id, time_spec, top_n, _all_group = self._parse_scope_tokens(tokens)
             spec, n = self._normalize_args(time_spec, top_n)
             r = svc.resolve(spec)
             scope_gid = group_id if group_id is not None else event.get_group_id()
@@ -594,7 +608,7 @@ class ChatInsight(Star):
     async def cmd_rank(
         self, event: AstrMessageEvent, a: str = None, b: str = None, c: str = None
     ):
-        """发言榜：/发言榜 [group <群号>] [时间] [条数]，群内默认当前群"""
+        """发言榜：/发言榜 [群 <群号>] [时间] [条数]，群内默认当前群"""
         async for r in self._rank_impl(event, [t for t in (a, b, c) if t]):
             yield r
 
@@ -608,7 +622,7 @@ class ChatInsight(Star):
         d: str = None,
         e: str = None,
     ):
-        """生成词云：/词云 [user <QQ号|me>] [group <群号>] [时间] [条数]"""
+        """生成词云：/词云 [时间]（默认自己）；@某人 查他人；「全群」查整群"""
         async for r in self._wordcloud_impl(event, [t for t in (a, b, c, d, e) if t]):
             yield r
 
@@ -618,7 +632,7 @@ class ChatInsight(Star):
     async def cmd_user_card(
         self, event: AstrMessageEvent, a: str = None, b: str = None, c: str = None
     ):
-        """用户统计综合卡片：/用户统计 [@某人] [user <QQ号|me>] [时间]"""
+        """用户统计综合卡片：/用户统计 [@某人] [用户 <QQ号|我>] [时间]"""
         try:
             svc = self._svc()
             ctx, err = await self._prepare_user(event, [t for t in (a, b, c) if t])
