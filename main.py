@@ -807,6 +807,19 @@ class ChatInsight(Star):
         await asyncio.to_thread(svc.repo.refresh_bot_ids)
         yield event.plain_result(f"🧹 已清空 {n} 条画像缓存，Bot ID 将重新识别")
 
+    def _wake_prefixes(self) -> list[str]:
+        """AstrBot 配置的唤醒前缀列表（可多个、可变更，禁止硬编码）。
+
+        框架唤醒后会从 message_str 剥离前缀；未唤醒消息保留原样。
+        """
+        try:
+            prefixes = self.context.get_config()["wake_prefix"]
+        except Exception:
+            prefixes = ["/"]
+        if isinstance(prefixes, str):
+            prefixes = [prefixes]
+        return [str(p) for p in prefixes if p]
+
     # ---------- 口语触发：个人词云（我的词云 / @某人 词云） ----------
 
     @filter.event_message_type(filter.EventMessageType.ALL, priority=99)
@@ -828,11 +841,18 @@ class ChatInsight(Star):
                 return
             personal, spec, top_n = hit
             if not event.is_at_or_wake_command:
-                # At 段在消息最前会使前缀唤醒判定失效（框架行为，At 非机器人不算唤醒）。
-                # 「@某人 /词云」「@某人 词云」是明确的指向性请求，放行；
+                # 框架规则：群聊里首段 @普通人 的消息即使带唤醒前缀也不唤醒
+                # （防止抢答别人被 @ 的消息），「@某人 /词云」因此进不了命令通道。
+                # 「@某人 词云」「@某人 <唤醒前缀>词云」是明确的指向性请求，放行；
+                # 判定用配置的真实唤醒前缀剥离（前缀可变更，不硬编码）；
                 # 其余未唤醒消息一律不响应，防止日常聊天误触。
-                first_bare = text.split()[0].lstrip("/!！").lower() if text.split() else ""
-                if first_bare not in ("词云", "wordcloud"):
+                stripped_texts = {text, text.lower()}
+                for p in self._wake_prefixes():
+                    if p and text.startswith(p):
+                        s = text[len(p):].strip()
+                        stripped_texts.update({s, s.lower()})
+                firsts = {t.split()[0] for t in stripped_texts if t.split()}
+                if not firsts & {"词云", "wordcloud"}:
                     return
             if personal:
                 tokens = ["user", "me", spec]
