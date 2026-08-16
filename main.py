@@ -828,7 +828,12 @@ class ChatInsight(Star):
                 return
             personal, spec, top_n = hit
             if not event.is_at_or_wake_command:
-                return  # 所有口语触发均需 @机器人 或 唤醒前缀，防止日常聊天误触
+                # At 段在消息最前会使前缀唤醒判定失效（框架行为，At 非机器人不算唤醒）。
+                # 「@某人 /词云」「@某人 词云」是明确的指向性请求，放行；
+                # 其余未唤醒消息一律不响应，防止日常聊天误触。
+                first_bare = text.split()[0].lstrip("/!！").lower() if text.split() else ""
+                if first_bare not in ("词云", "wordcloud"):
+                    return
             if personal:
                 tokens = ["user", "me", spec]
             else:
