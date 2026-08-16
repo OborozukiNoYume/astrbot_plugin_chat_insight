@@ -69,12 +69,12 @@ _PLUGIN_COMMAND_WORDS = frozenset(
 
 PROFILE_HELP = """📊 用户画像 — 子命令（时间参数可选，默认「历史」全期）
 /用户统计 [@某人] [时间]   综合卡片（查他人需管理员）
-/用户画像 me [@某人] [时间] 综合画像
+/用户画像 综合 [@某人] [时间] 综合画像
 /用户画像 活跃 [时间]      24h 分布 / 昼夜 / 连续活跃
 /用户画像 关键词 [时间]    讨论关键词（全期 vs 近 30 天）
 /用户画像 风格 [时间]      长度分位 / 连发 / 媒体偏好
 /用户画像 互动 [时间]      回复 / @ 互动网络
-/用户画像 bot [时间]       Bot 互动画像
+/用户画像 机器人 [时间]    Bot 互动画像
 /用户画像 昵称             昵称历史
 /群画像                    当前群画像
 /用户画像 刷新             清空画像缓存（管理员）
@@ -590,11 +590,11 @@ class ChatInsight(Star):
 
     # ---------- 命令入口②③：/发言排行 与 /词云（公开） ----------
 
-    @filter.command("发言排行", alias={"rank", "发言榜"})
+    @filter.command("发言榜", alias={"rank", "发言排行"})
     async def cmd_rank(
         self, event: AstrMessageEvent, a: str = None, b: str = None, c: str = None
     ):
-        """发言排行：/发言排行 [group <群号>] [时间] [条数]，群内默认当前群"""
+        """发言榜：/发言榜 [group <群号>] [时间] [条数]，群内默认当前群"""
         async for r in self._rank_impl(event, [t for t in (a, b, c) if t]):
             yield r
 
@@ -641,12 +641,12 @@ class ChatInsight(Star):
     def profile(self):
         """用户画像指令组"""
 
-    @profile.command("help")
+    @profile.command("帮助", alias={"help"})
     async def profile_help(self, event: AstrMessageEvent):
         """查看子命令列表"""
         yield event.plain_result(PROFILE_HELP)
 
-    @profile.command("me")
+    @profile.command("综合", alias={"me"})
     async def profile_me(self, event: AstrMessageEvent, a: str = None, b: str = None):
         """综合画像（默认自己；@他人需管理员）"""
         try:
@@ -713,7 +713,7 @@ class ChatInsight(Star):
         async for r in self._user_view(event, [t for t in (a, b) if t], "social"):
             yield r
 
-    @profile.command("bot")
+    @profile.command("机器人", alias={"bot"})
     async def profile_bot(self, event: AstrMessageEvent, a: str = None, b: str = None):
         """Bot 互动画像"""
         async for r in self._user_view(event, [t for t in (a, b) if t], "bot"):
