@@ -199,41 +199,6 @@ def fmt_hours(title: str, buckets: list[int]) -> str:
     return "\n".join(lines)
 
 
-def fmt_emoji_freq(title: str, pairs) -> str:
-    lines = [title]
-    for i, (em, count) in enumerate(pairs, 1):
-        lines.append(f"{i}. {em}  {count}")
-    if not pairs:
-        lines.append("该范围内没有 Emoji 记录")
-    return "\n".join(lines)
-
-
-def fmt_length(title: str, stats: dict) -> str:
-    if not stats or stats.get("n", 0) == 0:
-        return title + "\n该范围内没有文本消息"
-    dist = stats["distribution"]
-    lines = [
-        title,
-        f"样本: {stats['n']} 条文本消息（纯图片/语音等空文本消息不参与）",
-        f"平均 {stats['avg']:.1f} 字符 | 中位数 {stats['median']} | 最长 {stats['max']} | 最短 {stats['min']}",
-        "长度分布: " + " | ".join(f"{k}: {v}" for k, v in dist.items()),
-        f"长消息（≥100 字符）占比 {stats['long_ratio'] * 100:.1f}%",
-        "口径: LENGTH(content) 字符长度，≠ 汉字字数",
-    ]
-    return "\n".join(lines)
-
-
-def fmt_forward(title: str, fwd_total: int, msg_total: int, entries) -> str:
-    pct = f"{fwd_total / msg_total * 100:.1f}%" if msg_total else "-"
-    lines = [title, f"合并转发消息 {fwd_total} 条 / 用户消息 {msg_total} 条（{pct}）"]
-    for i, e in enumerate(entries, 1):
-        name = e.user_name if e.user_name and e.user_name != e.user_id else e.user_id
-        lines.append(f"{i}. {name}（{e.user_id}） {e.count} 次")
-    if not entries:
-        lines.append("该范围内没有转发记录")
-    return "\n".join(lines)
-
-
 def fmt_kw_trend(title: str, rows, cur_label: str, prev_label: str) -> str:
     """rows: [(word, cur, prev, change_str)]"""
     lines = [title, f"关键词     {cur_label}   {prev_label}   变化"]
@@ -244,32 +209,13 @@ def fmt_kw_trend(title: str, rows, cur_label: str, prev_label: str) -> str:
     return "\n".join(lines)
 
 
-def fmt_daynight(title: str, result: dict) -> str:
-    lines = [title]
-    if result.get("note"):
-        lines.append(result["note"])
-    lines.append("— 白天高频词 —")
-    lines.append(_freq_inline(result["day_top"]) or "无")
-    lines.append("— 夜间高频词 —")
-    lines.append(_freq_inline(result["night_top"]) or "无")
-    lines.append("— 白天特征词（相对更集中）—")
-    lines.append(_freq_inline(result["day_distinctive"]) or "无")
-    lines.append("— 夜间特征词（相对更集中）—")
-    lines.append(_freq_inline(result["night_distinctive"]) or "无")
-    return "\n".join(lines)
-
-
-def _freq_inline(pairs) -> str:
-    return "  ".join(f"{w}({round(v, 1)})" for w, v in pairs)
-
-
 # ---------- 用户画像格式化（dict 输入） ----------
 
 def fmt_user_card(name: str, p: dict, tz: ZoneInfo) -> str:
-    """综合卡片（/用户统计）。"""
+    """综合卡片（/用户画像 综合）。"""
     peak = "/".join(f"{h:02d}" for h in p["peak_hours"]) or "-"
     return (
-        f"👤 用户统计 — {name}（{p['scope_label']} · {p['range'].label}）\n"
+        f"👤 用户画像 — {name}（{p['scope_label']} · {p['range'].label}）\n"
         f"消息 {p['message_count']} 条（文本 {p['text_message_count']}）"
         f"｜活跃 {p['active_days']} 天｜活跃群 {p['active_groups']} 个\n"
         f"首次 {fmt_ts(p['first_seen'], tz)}｜最近 {fmt_ts(p['last_seen'], tz)}\n"

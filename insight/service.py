@@ -10,7 +10,6 @@
 
 from __future__ import annotations
 
-import statistics as py_stats
 import time
 from collections import Counter
 from datetime import date, datetime, timedelta
@@ -32,8 +31,6 @@ class ServiceError(Exception):
     """面向用户的可读错误（命令层直接展示 message）。"""
 
 
-# 长度分布桶（字符长度口径）
-_LENGTH_BUCKETS = [("1-10", 1, 10), ("11-30", 11, 30), ("31-60", 31, 60), ("61-120", 61, 120), ("121+", 121, None)]
 _LONG_THRESHOLD = 100
 _SHORT_THRESHOLD = 10
 # 关键词趋势低基数阈值：任一侧计数低于该值时不给百分比，只给基数
@@ -104,7 +101,6 @@ class StatisticsService:
         wordcloud_enabled: bool = True,
         wordcloud_max_words: int = 80,
         wordcloud_retention_days: int = 7,
-        day_hours: tuple[int, int] = (6, 18),
         now_ts: int | None = None,
     ):
         self.repo = repository
@@ -123,7 +119,6 @@ class StatisticsService:
         self.wordcloud_enabled = bool(wordcloud_enabled)
         self.wordcloud_max_words = int(wordcloud_max_words)
         self.wordcloud_retention_days = int(wordcloud_retention_days)
-        self.day_hours = day_hours
         self._now_ts = now_ts  # 固定时钟（测试注入），None=真实时间
         self._font: Path | None | bool = False  # False=未探测
 
@@ -282,52 +277,7 @@ class StatisticsService:
                     pass
         return image_path, pairs, sum(counter.values())
 
-    # ---------- 群统计：Emoji / 类型与媒体 / 长度 / 转发 ----------
-
-    def emoji_stats(self, r: TimeRange, group_id, top_n: int | None = None):
-        gid = self._require_group(group_id)
-        counter = textproc.count_emoji(self._plain_texts(r, group_id=gid))
-        if not counter:
-            raise ServiceError(f"{r.label}（{describe_span(r)}）范围内没有 Emoji 记录。")
-        return counter.most_common(top_n or self.default_top_n)
-
-    def media_stats(self, r: TimeRange, group_id):
-        gid = self._require_group(group_id)
-        media = self.repo.get_media_stats(r, group_id=gid)
-        types = self.repo.get_message_type_stats(r, group_id=gid)
-        if media.messages == 0:
-            raise ServiceError(f"{r.label}（{describe_span(r)}）该群没有用户消息记录。")
-        return media, types
-
-    def length_stats(self, r: TimeRange, group_id) -> dict:
-        gid = self._require_group(group_id)
-        lengths = self.repo.get_lengths(r, group_id=gid, limit=self.max_messages_scan)
-        if not lengths:
-            raise ServiceError(f"{r.label}（{describe_span(r)}）范围内没有文本消息。")
-        distribution = {}
-        for label, lo, hi in _LENGTH_BUCKETS:
-            distribution[label] = sum(1 for v in lengths if v >= lo and (hi is None or v <= hi))
-        n = len(lengths)
-        return {
-            "n": n,
-            "avg": sum(lengths) / n,
-            "median": int(py_stats.median(lengths)),
-            "min": min(lengths),
-            "max": max(lengths),
-            "distribution": distribution,
-            "long_ratio": sum(1 for v in lengths if v >= _LONG_THRESHOLD) / n,
-        }
-
-    def forward_stats(self, r: TimeRange, group_id, top_n: int | None = None):
-        gid = self._require_group(group_id)
-        fwd_total, msg_total, entries = self.repo.get_forward_stats(
-            r, group_id=gid, limit=top_n or self.default_top_n
-        )
-        if fwd_total == 0:
-            raise ServiceError(f"{r.label}（{describe_span(r)}）范围内没有合并转发记录。")
-        return fwd_total, msg_total, entries
-
-    # ---------- 群统计：关键词趋势 / 昼夜差异 ----------
+    # ---------- 群统计：关键词趋势 ----------
 
     def kw_trend(self, spec: str | None, group_id, top_n: int | None = None):
         """当前区间 vs 紧邻上一区间。低基数（任一侧 < 5 次）只展示次数，不算百分比。"""
@@ -360,48 +310,6 @@ class StatisticsService:
             rows.append((word, c, p, change))
         rows.sort(key=lambda x: (-(x[1] + x[2]), x[0]))
         return rows, cur, prev
-
-    def daynight(self, r: TimeRange, group_id, top_n: int | None = None):
-        """白天/夜间高频词对比。频次按「每千条消息出现次数」归一化，消除两端消息总量差异。"""
-        gid = self._require_group(group_id)
-        n = top_n or self.default_top_n
-        h_from, h_to = self.day_hours
-        off = self._off(r)
-        day_texts = self.repo.fetch_texts_by_hour(r, gid, h_from, h_to, off, self.max_messages_scan)
-        night_texts = self.repo.fetch_texts_by_hour(r, gid, h_to, h_from, off, self.max_messages_scan)
-        day_plain = [t for raw in day_texts for t in textproc.extract_plain_texts(raw)]
-        night_plain = [t for raw in night_texts for t in textproc.extract_plain_texts(raw)]
-        if not day_plain and not night_plain:
-            raise ServiceError(f"{r.label}（{describe_span(r)}）范围内没有可统计的文本。")
-        day_counter = textproc.count_keywords(day_plain, self.stopwords)
-        night_counter = textproc.count_keywords(night_plain, self.stopwords)
-        day_n = max(1, len(day_texts))
-        night_n = max(1, len(night_texts))
-
-        def per_k(counter: Counter, total_msgs: int) -> dict[str, float]:
-            return {w: c / total_msgs * 1000 for w, c in counter.items()}
-
-        day_freq, night_freq = per_k(day_counter, day_n), per_k(night_counter, night_n)
-        day_top = sorted(day_freq.items(), key=lambda x: -x[1])[:n]
-        night_top = sorted(night_freq.items(), key=lambda x: -x[1])[:n]
-        day_dist = sorted(
-            ((w, day_freq[w] - night_freq.get(w, 0.0)) for w in day_freq if day_freq[w] >= 2.0),
-            key=lambda x: -x[1],
-        )[:n]
-        night_dist = sorted(
-            ((w, night_freq[w] - day_freq.get(w, 0.0)) for w in night_freq if night_freq[w] >= 2.0),
-            key=lambda x: -x[1],
-        )[:n]
-        return {
-            "day_messages": len(day_texts),
-            "night_messages": len(night_texts),
-            "day_top": day_top,
-            "night_top": night_top,
-            "day_distinctive": day_dist,
-            "night_distinctive": night_dist,
-            "note": f"白天 {h_from:02d}:00–{h_to:02d}:00 共 {len(day_texts)} 条 | "
-            f"夜间 {h_to:02d}:00–次日{h_from:02d}:00 共 {len(night_texts)} 条；括号内为每千条消息出现次数",
-        }
 
     # ==================== 用户画像 ====================
 

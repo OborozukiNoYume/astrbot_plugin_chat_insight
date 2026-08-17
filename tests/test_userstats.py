@@ -196,7 +196,7 @@ def test_render_user_outputs(service, all_range):
 
     p = service.user_summary(all_range, U1, G1)
     text = render.fmt_user_card("三哥", p, service.tz)
-    assert "用户统计 — 三哥" in text and "群 10001" in text
+    assert "用户画像 — 三哥" in text and "群 10001" in text
     a = render.fmt_user_activity(service.user_activity(all_range, U1, G1))
     assert "活跃规律" in a and "高峰" in a
     s = render.fmt_user_style(service.user_style(all_range, U1, G1))

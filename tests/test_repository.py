@@ -75,27 +75,7 @@ def test_activity_by_hour(repo, week):
     assert buckets[9] > 0
 
 
-def test_count_by_hour_cross_midnight(repo, week):
-    off = tz_offset_seconds(TZ, week.start_ts)
-    night = repo.count_by_hour(week, G1, 18, 6, off)
-    day = repo.count_by_hour(week, G1, 6, 18, off)
-    assert night > 0  # 23:00 与 22:00 的消息
-    assert day > night
-    assert night + day == repo.get_message_count(week, group_id=G1)
 
-
-def test_forward_stats_structured(repo, week):
-    fwd_total, msg_total, entries = repo.get_forward_stats(week, group_id=G1, limit=10)
-    assert fwd_total == 3  # u1×2 + u2×1
-    assert msg_total == repo.get_message_count(week, group_id=G1)
-    by_user = {e.user_id: e.count for e in entries}
-    assert by_user == {U1: 2, U2: 1}
-
-
-def test_forward_not_matched_by_plain_text(repo, week):
-    # 文本里出现"转发"二字（plain 段）不算转发；坏 JSON 行也不得导致报错
-    _, _, entries = repo.get_forward_stats(week, group_id=G1, limit=10)
-    assert all(e.count >= 1 for e in entries)
 
 
 def test_media_stats(repo, week):
@@ -106,15 +86,6 @@ def test_media_stats(repo, week):
     assert media.count("video") == 0
 
 
-def test_message_type_stats(repo, week):
-    types = repo.get_message_type_stats(week, group_id=G1)
-    assert set(types) == {"group"}
-
-
-def test_lengths_exclude_empty(repo, week):
-    lengths = repo.get_lengths(week, group_id=G1)
-    assert 0 not in lengths
-    assert max(lengths) == 108  # LONG_TEXT
 
 
 def test_fetch_texts_limit_and_order(repo, week):
@@ -124,16 +95,6 @@ def test_fetch_texts_limit_and_order(repo, week):
     assert len(all_rows) > 3
     assert limited[0] == all_rows[0]  # 同为最新优先
 
-
-def test_fetch_texts_by_hour(repo, week):
-    off = tz_offset_seconds(TZ, week.start_ts)
-    night_texts = repo.fetch_texts_by_hour(week, G1, 18, 6, off)
-    assert len(night_texts) == repo.count_by_hour(week, G1, 18, 6, off)
-    # 私聊消息不在群过滤结果里
-    private_rows = [
-        r for r in repo.fetch_texts(week, group_id=G2, limit=10000)
-    ]
-    assert len(private_rows) == 1
 
 
 def test_display_name_fallback(repo, week):
@@ -181,5 +142,3 @@ def test_empty_database(tmp_path):
     week = resolve_range("7天", TZ, now_ts=NOW)
     assert r.get_message_count(week, group_id=G1) == 0
     assert r.get_activity_by_day(week, group_id=G1, offset_seconds=28800) == []
-    assert r.get_forward_stats(week, group_id=G1) == (0, 0, [])
-    assert r.get_lengths(week, group_id=G1) == []

@@ -4,7 +4,7 @@
 - 只读（连接由 db.ChatlogDB 以 mode=ro 提供），参数绑定，禁止拼接值
 - 统计用户行为恒过滤 sender_type='user'，bot 消息不计（口径见 README）
 - 时间过滤 ts >= ? AND ts < ?，配合 (group_id, ts)/(user_id, ts)/(ts) 索引
-- 转发 / @网络 使用 JSON 结构化函数（json_each/json_extract），
+- @网络 使用 JSON 结构化函数（json_each/json_extract），
   且一律先经 json_valid 内层过滤——content_json 可能被 chatlogger 截断为非法 JSON
 
 唤醒消息（waked_bot）过滤分场景：
@@ -302,48 +302,7 @@ class ChatlogRepository:
         )
         return [row[0] for row in rows]
 
-    @staticmethod
-    def _hour_cond(hour_from: int, hour_to: int, offset_seconds: int):
-        """本地小时落在 [hour_from, hour_to) 的条件（支持跨夜如 18→06）。"""
-        expr_a = "CAST((ts + ?) % 86400 / 3600 AS INTEGER)"
-        if hour_from <= hour_to:
-            cond = f"{expr_a} >= ? AND {expr_a} < ?"
-        else:
-            cond = f"{expr_a} >= ? OR {expr_a} < ?"
-        return cond, [offset_seconds, hour_from, offset_seconds, hour_to]
-
-    def count_by_hour(
-        self, r: TimeRange, group_id, hour_from: int, hour_to: int, offset_seconds: int
-    ) -> int:
-        """与 fetch_texts_by_hour 完全同口径的消息计数。"""
-        cond, cond_params = self._hour_cond(hour_from, hour_to, offset_seconds)
-        where, params = self._where(r, group_id, extra=[cond])
-        row = self._query(
-            f"SELECT COUNT(*) FROM messages WHERE {where}", params + cond_params
-        )
-        return int(row[0][0])
-
-    def fetch_texts_by_hour(
-        self,
-        r: TimeRange,
-        group_id,
-        hour_from: int,
-        hour_to: int,
-        offset_seconds: int,
-        limit: int = 50000,
-    ) -> list[str]:
-        """取本地小时落在 [hour_from, hour_to) 的消息文本（支持跨夜区间如 18→06）。"""
-        cond, cond_params = self._hour_cond(hour_from, hour_to, offset_seconds)
-        where, params = self._where(
-            r, group_id, extra=["content_json IS NOT NULL", cond]
-        )
-        rows = self._query(
-            f"SELECT content_json FROM messages WHERE {where} ORDER BY ts DESC LIMIT ?",
-            params + cond_params + [limit],
-        )
-        return [row[0] for row in rows]
-
-    # ---------- 媒体 / 消息类型 ----------
+    # ---------- 媒体（media_flags 位聚合，群画像与用户风格共用） ----------
 
     def _media_aggregate_sql(self) -> str:
         return ", ".join(f"SUM(media_flags & {bit} != 0)" for bit in MEDIA_BITS.values())
@@ -356,66 +315,6 @@ class ChatlogRepository:
         )[0]
         counts = {k: int(v or 0) for (k, v) in zip(MEDIA_BITS, row[1:])}
         return MediaStats(messages=int(row[0]), counts=counts)
-
-    def get_message_type_stats(self, r: TimeRange, group_id=None) -> dict[str, int]:
-        where, params = self._where(r, group_id)
-        rows = self._query(
-            f"SELECT message_type, COUNT(*) FROM messages WHERE {where} GROUP BY message_type",
-            params,
-        )
-        return {str(t): int(c) for t, c in rows}
-
-    # ---------- 转发（json_each 检测 node/forward 段，勿用 LIKE） ----------
-
-    _FWD_EXISTS_M = (
-        "EXISTS (SELECT 1 FROM json_each(m.content_json) seg "
-        "WHERE json_extract(seg.value, '$.t') IN ('forward', 'node'))"
-    )
-
-    def get_forward_stats(
-        self, r: TimeRange, group_id=None, limit: int = 10
-    ) -> tuple[int, int, list[RankEntry]]:
-        """返回 (转发消息数, 用户消息总数, 转发排行)。"""
-        where, params = self._where(r, group_id, extra=[_JSON_OK])
-        fwd_rows = self._query(
-            f"""
-            SELECT m.user_id, COUNT(*) AS c, MAX(m.ts), m.user_name
-            FROM (SELECT user_id, user_name, ts, content_json FROM messages WHERE {where}) m
-            WHERE {self._FWD_EXISTS_M}
-            GROUP BY m.user_id ORDER BY c DESC, m.user_id LIMIT ?
-            """,
-            params + [limit],
-        )
-        row = self._query(
-            f"""
-            SELECT COUNT(*) FROM (
-              SELECT content_json FROM messages WHERE {where}
-            ) m WHERE {self._FWD_EXISTS_M}
-            """,
-            params,
-        )
-        fwd_total = int(row[0][0])
-        entries = [
-            RankEntry(
-                user_id=str(uid),
-                user_name=(name or "") or str(uid),
-                count=int(c),
-                ratio=(int(c) / fwd_total) if fwd_total else 0.0,
-            )
-            for uid, c, _, name in fwd_rows
-        ]
-        return fwd_total, self.get_message_count(r, group_id=group_id), entries
-
-    # ---------- 消息长度（口径：content 字符长度，纯媒体空文本不参与） ----------
-
-    def get_lengths(
-        self, r: TimeRange, group_id=None, user_id=None, limit: int = 50000
-    ) -> list[int]:
-        where, params = self._where(r, group_id, user_id, extra=["content != ''"])
-        rows = self._query(
-            f"SELECT LENGTH(content) FROM messages WHERE {where} LIMIT ?", params + [limit]
-        )
-        return [int(v) for (v,) in rows]
 
     # ==================== 用户画像（行为统计不排除唤醒消息） ====================
 

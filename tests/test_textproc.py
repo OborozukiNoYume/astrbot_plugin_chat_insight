@@ -59,17 +59,6 @@ def test_count_keywords_occurrence_semantics():
     assert counter["AI"] == 4
 
 
-def test_count_emoji_clusters():
-    counter = textproc.count_emoji(["😂😂🤣👨‍👩‍👧‍👦"])
-    assert counter["😂"] == 2
-    assert counter["🤣"] == 1
-    assert counter["👨‍👩‍👧‍👦"] == 1  # ZWJ 组合算一个 emoji
-
-
-def test_count_emoji_mixed_text():
-    counter = textproc.count_emoji(["吃饭了吗😂和🤣🤣"])
-    assert counter["😂"] == 1
-    assert counter["🤣"] == 2
 
 
 def test_load_stopwords(tmp_path):

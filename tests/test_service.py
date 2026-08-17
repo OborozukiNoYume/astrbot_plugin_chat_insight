@@ -84,19 +84,6 @@ def test_kw_trend_new_word(service):
     assert by_word["好文"] == "新增"  # 只在 08-15 出现（URL 消息）
 
 
-def test_daynight_normalized(service, week):
-    result = service.daynight(week, G1, 10)
-    # 白天词只在白天出现、夜话只在夜间出现
-    day_words = {w for w, _ in result["day_distinctive"]}
-    night_words = {w for w, _ in result["night_distinctive"]}
-    assert "显卡" in day_words
-    assert "睡觉" in night_words
-    assert "睡觉" not in day_words
-    # 归一化数值口径：每千条消息出现次数
-    day_top = dict(result["day_top"])
-    if "显卡" in day_top:
-        assert day_top["显卡"] > 0
-
 
 def test_trend_rejects_huge_range(service):
     r = service.resolve("历史")
@@ -117,30 +104,8 @@ def test_kw_trend_history_rejected(service):
         service.kw_trend("历史", G1, 10)
 
 
-def test_emoji_stats(service, week):
-    pairs = service.emoji_stats(week, G1, 10)
-    d = dict(pairs)
-    assert d["😂"] == 2 and d["🤣"] == 1 and d["👨‍👩‍👧‍👦"] == 1
 
 
-def test_media_and_type_stats(service, week):
-    media, types = service.media_stats(week, G1)
-    assert media.count("image") == 1
-    assert types.get("group") == media.messages
-
-
-def test_length_stats(service, week):
-    s = service.length_stats(week, G1)
-    assert s["n"] > 0
-    assert s["max"] == 108
-    assert s["long_ratio"] > 0
-    assert sum(s["distribution"].values()) == s["n"]
-
-
-def test_forward_stats(service, week):
-    fwd_total, msg_total, entries = service.forward_stats(week, G1, 10)
-    assert fwd_total == 3
-    assert {e.user_id: e.count for e in entries} == {"111": 2, "222": 1}
 
 
 def test_wordcloud_renders_png(service, week, tmp_path):

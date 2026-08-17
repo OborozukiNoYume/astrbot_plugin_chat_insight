@@ -1,4 +1,4 @@
-"""文本清洗 / 分词 / 停用词 / Emoji 提取。
+"""文本清洗 / 分词 / 停用词。
 
 取词口径：只用 content_json 的 plain 段（结构化文本），不用 content
 （content 混有 @名字(QQ号) 渲染文本，且空文本=纯媒体消息）。
@@ -87,18 +87,6 @@ def count_keywords(plain_texts, stopwords) -> Counter:
     counter: Counter = Counter()
     for text in plain_texts:
         counter.update(tokenize(clean_text(text), stopwords))
-    return counter
-
-
-def count_emoji(plain_texts) -> Counter:
-    """Unicode Emoji 频次。emoji 库按图形簇匹配，正确处理 ZWJ 组合与 VS16。"""
-    counter: Counter = Counter()
-    for text in plain_texts:
-        try:
-            for m in emoji_lib.emoji_list(text):
-                counter[m["emoji"]] += 1
-        except Exception:
-            continue
     return counter
 
 
