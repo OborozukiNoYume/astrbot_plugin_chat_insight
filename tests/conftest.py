@@ -14,7 +14,6 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
-
 from insight import textproc
 from insight.db import ChatlogDB
 from insight.repository import ChatlogRepository

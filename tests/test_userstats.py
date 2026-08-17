@@ -6,9 +6,7 @@
 from __future__ import annotations
 
 import pytest
-
-from conftest import G1, G2, U1, U2, BOT, NOW, TZ, ts
-
+from conftest import BOT, G1, G2, NOW, TZ, U1, U2, ts
 from insight.service import ServiceError, _burst_sizes, _pctl, _streaks
 from insight.timeutil import resolve_range
 
@@ -208,6 +206,9 @@ def test_render_user_outputs(service, all_range):
     b = render.fmt_user_bot(service.user_bot(all_range, U1, G1))
     assert "Bot 互动" in b and "私聊会话" in b
     n = render.fmt_user_names(service.user_names(U1), service.tz)
+    assert "昵称历史" in n and "张三" in n
+    g = render.fmt_group_profile(service.group_profile(G1), service.tz)
+    assert "群画像" in g and "非群成员总数" in g
 
 
 def test_user_full_merges_all_views(service, all_range):
@@ -221,10 +222,6 @@ def test_user_full_merges_all_views(service, all_range):
     assert "活跃规律" in text and "讨论关键词" in text
     assert "消息风格" in text and "互动关系" in text and "Bot 互动" in text
     assert text.count("————") == 5  # 六段以分隔线相连
-    n = render.fmt_user_names(service.user_names(U1), service.tz)
-    assert "昵称历史" in n and "张三" in n
-    g = render.fmt_group_profile(service.group_profile(G1), service.tz)
-    assert "群画像" in g and "非群成员总数" in g
 
 
 # ---------- json_valid 防护（坏 JSON 行不得使统计崩溃） ----------

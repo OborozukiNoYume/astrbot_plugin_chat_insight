@@ -1,18 +1,15 @@
 """timeutil：边界换算 / 别名 / 上限 / 上一区间。"""
 
 from datetime import datetime
-from zoneinfo import ZoneInfo
 
 import pytest
-
+from conftest import NOW, TZ, ts
 from insight.timeutil import (
     TimeRangeError,
     day_bucket_to_date,
     resolve_range,
     tz_offset_seconds,
 )
-
-from conftest import NOW, TZ, ts
 
 
 def test_today():

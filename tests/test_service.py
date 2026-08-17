@@ -1,10 +1,8 @@
 """service：聚合口径 / 业务规则（低基数、昼夜归一化）/ 词云与降级。"""
 
 import pytest
-
+from conftest import G1
 from insight.service import ServiceError, StatisticsService
-
-from conftest import G1, PLUGIN_DIR, NOW, build_db
 
 
 @pytest.fixture
@@ -122,6 +120,7 @@ def test_wordcloud_user_scope(service, week):
 
 def test_wordcloud_topn_limits_image_words(service, week):
     from unittest.mock import patch
+
     from insight import render as render_mod
     captured = {}
     real = render_mod.render_wordcloud

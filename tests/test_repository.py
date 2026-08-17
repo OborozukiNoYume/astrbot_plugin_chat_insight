@@ -1,14 +1,11 @@
 """repository：计数口径 / 索引化聚合 / JSON 结构化统计 / 坏 JSON 容错。"""
 
-from pathlib import Path
 
 import pytest
-
+from conftest import BOT, G1, G2, NOW, TZ, U1, U2, build_db
 from insight.db import ChatlogDB, DatabaseNotAvailable, SchemaIncompatible
 from insight.repository import ChatlogRepository
 from insight.timeutil import resolve_range, tz_offset_seconds
-
-from conftest import BOT, G1, G2, TZ, U1, U2, NOW, build_db, ts
 
 
 @pytest.fixture
@@ -126,7 +123,6 @@ def test_waked_messages_excluded_by_default(repo, week):
 
 
 def repo_all_count(repo, week):
-    import sqlite3
     with repo.db.connect() as conn:
         row = conn.execute(
             "SELECT COUNT(*) FROM messages WHERE group_id = ? AND sender_type = 'user' "

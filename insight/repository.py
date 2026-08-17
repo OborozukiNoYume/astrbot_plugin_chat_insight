@@ -15,7 +15,6 @@
 
 from __future__ import annotations
 
-from collections import Counter
 from dataclasses import dataclass, field
 
 from .db import ChatlogDB
@@ -575,7 +574,7 @@ class ChatlogRepository:
     def get_group_reply_pairs(self, group_id, r: TimeRange, limit: int = 10):
         """群内高频回复互动对（reply_user_id 冗余列，无需 join）。"""
         rows = self._query(
-            f"""
+            """
             SELECT user_id, reply_user_id, COUNT(*) c FROM messages
             WHERE group_id = ? AND sender_type = 'user' AND ts >= ? AND ts < ?
               AND reply_user_id IS NOT NULL AND reply_user_id != user_id

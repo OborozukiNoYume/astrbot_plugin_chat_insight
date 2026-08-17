@@ -45,7 +45,7 @@ class TimeRange:
     def duration(self) -> int:
         return self.end_ts - self.start_ts
 
-    def previous(self) -> "TimeRange":
+    def previous(self) -> TimeRange:
         """紧邻的上一对比区间。
 
         今日/N天按时长平移；本周/本月返回上一个**完整**自然周/月
