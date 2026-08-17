@@ -90,7 +90,7 @@ AstrBot → ChatLogger → chatlog.db → Chat Insight（本插件，只读）
 ## 开发
 
 ```bash
-python -m pytest tests/ -q   # 107 个用例：契约/时区/口径/画像/坏JSON/边界
+python -m pytest tests/ -q   # 98 个用例：契约/时区/口径/画像/缓存/坏JSON/边界
 ```
 
 包结构：`insight/`（纯 Python）：`db`（只读连接）· `timeutil`（唯一时间实现）· `textproc`（清洗/分词）· `repository`（全部 SQL）· `service`（业务聚合）· `render`（渲染与降级）· `colloquial`（口语触发匹配）· `cache`（画像 TTL 缓存）。
