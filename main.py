@@ -87,7 +87,7 @@ PROFILE_HELP = """📊 用户画像 — 子命令（时间参数可选，默认�
     PLUGIN_NAME,
     "OborozukiNoYume",
     "聊天洞察：基于 ChatLogger 的群聊统计、发言排行、词云关键词、用户画像（只读）",
-    "0.1.0",
+    "0.2.0",
 )
 class ChatInsight(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
