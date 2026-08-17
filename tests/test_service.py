@@ -123,11 +123,6 @@ def test_emoji_stats(service, week):
     assert d["😂"] == 2 and d["🤣"] == 1 and d["👨‍👩‍👧‍👦"] == 1
 
 
-def test_face_stats(service, week):
-    rows = service.face_stats(week, G1, 10)
-    assert dict(rows).get(123) == 2
-
-
 def test_media_and_type_stats(service, week):
     media, types = service.media_stats(week, G1)
     assert media.count("image") == 1
@@ -199,6 +194,54 @@ def test_wordcloud_disabled_returns_text_only(repo, stopwords, tmp_path, week):
     image_path, pairs, total = svc.wordcloud(week, G1, None, 10)
     assert image_path is None
     assert pairs
+
+
+def test_wordcloud_prunes_expired_pngs(repo, stopwords, tmp_path, week):
+    import os
+    import time as time_mod
+
+    out = tmp_path / "out"
+    out.mkdir()
+    expired = out / "wc_g10001_0.png"
+    fresh = out / "wc_g10001_9999999999.png"
+    for f in (expired, fresh):
+        f.write_bytes(b"x")
+    past = time_mod.time() - 30 * 86400
+    os.utime(expired, (past, past))  # 30 天前，超出默认 7 天保留期
+
+    svc = StatisticsService(
+        repo,
+        stopwords=stopwords,
+        output_dir=out,
+        plugin_dir=tmp_path,
+        wordcloud_enabled=False,  # 文本模式同样执行清理
+    )
+    svc.wordcloud(week, G1, None, 10)
+    assert not expired.exists()
+    assert fresh.exists()
+
+
+def test_wordcloud_prune_disabled_keeps_all(repo, stopwords, tmp_path, week):
+    import os
+    import time as time_mod
+
+    out = tmp_path / "out"
+    out.mkdir()
+    expired = out / "wc_g10001_0.png"
+    expired.write_bytes(b"x")
+    past = time_mod.time() - 30 * 86400
+    os.utime(expired, (past, past))
+
+    svc = StatisticsService(
+        repo,
+        stopwords=stopwords,
+        output_dir=out,
+        plugin_dir=tmp_path,
+        wordcloud_enabled=False,
+        wordcloud_retention_days=0,  # 关闭自动清理
+    )
+    svc.wordcloud(week, G1, None, 10)
+    assert expired.exists()
 
 
 def test_wordcloud_empty_range(service):

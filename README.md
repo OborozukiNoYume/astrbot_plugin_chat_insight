@@ -42,7 +42,7 @@ AstrBot → ChatLogger → chatlog.db → Chat Insight（本插件，只读）
 | `昵称` / `names` | 昵称历史 |
 | `状态` / `刷新` | 契约检查 / 清缓存（管理员） |
 
-**管理命令组 `/聊天统计`（别名 `统计` / `chatstats`，仅管理员）**：`总览`、`趋势`、`时段`、`关键词`、`emoji`、`表情`、`类型`、`长度`、`转发`、`关键词趋势`、`昼夜`——与原 chat_statistics 完全一致。
+**管理命令组 `/聊天统计`（别名 `统计` / `chatstats`，仅管理员）**：`总览`、`趋势`、`时段`、`关键词`、`emoji`、`类型`、`长度`、`转发`、`关键词趋势`、`昼夜`。
 
 个人词云口语触发（默认开启，`wordcloud_trigger_enabled` 可关）：一律需要 @机器人或唤醒前缀——`@机器人 我的词云`、`@机器人 我的历史词云`、`@机器人 @某人 历史词云`；裸「词云」与普通聊天一律不响应。
 
@@ -51,7 +51,7 @@ AstrBot → ChatLogger → chatlog.db → Chat Insight（本插件，只读）
 - **用户消息**：恒过滤 `sender_type='user'`，机器人消息不计入任何统计。
 - **唤醒消息（waked_bot）分场景**：群统计（排行/总览/关键词/群画像）默认排除 `waked_bot=1`（斜杠命令、@机器人、引用机器人、私聊），防止命令文本污染统计，受 `exclude_waked_messages` 配置控制；**用户画像的行为统计（活跃/风格/互动/Bot）不排除**——唤醒 Bot 本身是用户行为；用户画像的关键词恒排除。
 - **关键词 / 词云**：取 `content_json` 的 `plain` 段（结构化文本），jieba 分词后按 token 出现次数计数；过滤 URL、纯数字、标点、单字、停用词。
-- **Emoji**：Unicode Emoji 用 emoji 库按图形簇匹配（正确处理 ZWJ 组合 / VS16）；QQ 经典表情按 face ID 口径 SQL 聚合。
+- **Emoji**：Unicode Emoji 用 emoji 库按图形簇匹配（正确处理 ZWJ 组合 / VS16）。
 - **消息长度**：`LENGTH(content)` 字符长度，≠ 汉字字数；纯图片/语音等空文本消息不参与。
 - **时间**：`ts` 为 UTC epoch 秒，今日/本周/小时分布/活跃天数均按配置时区（默认 `Asia/Shanghai`）在应用层换算；周为周一起始。
 - **措辞纪律**：只呈现可验证的频次/分布事实——「高频互动对象」而非「好友」，「主要讨论关键词」而非「兴趣」，不推导心理标签。
@@ -81,6 +81,7 @@ AstrBot → ChatLogger → chatlog.db → Chat Insight（本插件，只读）
 | `font_path` | 空（内置字体） | 词云字体；内置 `assets/fonts/NotoSansSC.ttf` |
 | `stopwords_path` / `extra_stopwords` | 空 / `[]` | 自定义停用词 |
 | `wordcloud_trigger_enabled` | `true` | 个人词云口语触发开关 |
+| `wordcloud_retention_days` | `7` | 词云 PNG 保留天数，生成时自动清理过期图，`0` 关闭 |
 | `exclude_waked_messages` | `true` | 群统计排除唤醒消息 |
 | `profile_scope` | `current_group` | 用户画像范围（`all` 为全部会话） |
 | `cache_ttl_minutes` | `30` | 画像内存缓存分钟数，`0` 关闭 |
@@ -91,8 +92,7 @@ AstrBot → ChatLogger → chatlog.db → Chat Insight（本插件，只读）
 - 按天趋势最多约一个季度（92 天）。
 - 「最常被谁回复」（`reply_user_id` 无索引）与「@ 网络」（`json_each` 展开）为已知全扫描，已限群范围 + 90 天时间窗；变慢后由 chatlogger 上游按缓建预案加索引。
 - 用户风格的连发统计需按 `(user_id, ts)` 索引拉取该用户全部 ts（纯整数序列）；活跃大户首次查询为秒级，靠 TTL 缓存缓解。
-- QQ 经典表情以 face ID 呈现，不做 ID→名称映射。
-- 词云 PNG 按区间命名写入 `plugin_data`，长期使用建议定期清理。
+- 词云 PNG 按区间命名写入 `plugin_data`，生成时自动清理超过 `wordcloud_retention_days`（默认 7 天）的旧图。
 
 ## 部署
 

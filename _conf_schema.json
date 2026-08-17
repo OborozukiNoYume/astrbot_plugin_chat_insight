@@ -59,6 +59,12 @@
     "default": true,
     "hint": "开启后「我的词云」「我的历史词云」「@某人 词云」可直接触发个人词云，无需斜杠命令（仍需 @机器人或唤醒前缀）"
   },
+  "wordcloud_retention_days": {
+    "description": "词云图片保留天数",
+    "type": "int",
+    "default": 7,
+    "hint": "生成词云时自动删除 plugin_data 下超过该天数的旧词云 PNG；0 关闭自动清理"
+  },
   "exclude_waked_messages": {
     "description": "统计排除唤醒消息",
     "type": "bool",

@@ -133,6 +133,9 @@ class ChatInsight(Star):
                 plugin_dir=Path(__file__).parent,
                 font_path_config=self.config.get("font_path", "") or None,
                 wordcloud_enabled=bool(self.config.get("wordcloud_enabled", True)),
+                wordcloud_retention_days=int(
+                    self.config.get("wordcloud_retention_days", 7)
+                ),
             )
             self._wc_trigger_enabled = bool(self.config.get("wordcloud_trigger_enabled", True))
             self._profile_scope = str(self.config.get("profile_scope", "current_group"))
@@ -469,24 +472,6 @@ class ChatInsight(Star):
             yield event.plain_result(f"⚠️ {e}")
         except Exception as e:
             logger.error(f"[insight] emoji 失败: {e}", exc_info=True)
-            yield event.plain_result("查询失败，请稍后重试（详情见日志）。")
-
-    @chatstats.command("表情", alias={"face"})
-    @filter.permission_type(filter.PermissionType.ADMIN)
-    async def cmd_face(self, event: AstrMessageEvent, time_spec: str = None, top_n: int = None):
-        """QQ 表情统计：/聊天统计 表情 [时间] [N]（管理员，face ID 口径）"""
-        try:
-            svc = self._svc()
-            spec, n = self._normalize_args(time_spec, top_n)
-            r = svc.resolve(spec)
-            rows = await asyncio.to_thread(svc.face_stats, r, event.get_group_id(), n)
-            yield event.plain_result(
-                render.fmt_face_freq(f"😚 QQ 表情统计 · {r.label}（{describe_span(r)}）", rows)
-            )
-        except _USER_ERRORS as e:
-            yield event.plain_result(f"⚠️ {e}")
-        except Exception as e:
-            logger.error(f"[insight] face 失败: {e}", exc_info=True)
             yield event.plain_result("查询失败，请稍后重试（详情见日志）。")
 
     @chatstats.command("类型", alias={"type"})

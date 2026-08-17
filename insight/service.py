@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 import statistics as py_stats
+import time
 from collections import Counter
 from datetime import date, datetime, timedelta
 from pathlib import Path
@@ -102,6 +103,7 @@ class StatisticsService:
         font_path_config: str | None = None,
         wordcloud_enabled: bool = True,
         wordcloud_max_words: int = 80,
+        wordcloud_retention_days: int = 7,
         day_hours: tuple[int, int] = (6, 18),
         now_ts: int | None = None,
     ):
@@ -120,6 +122,7 @@ class StatisticsService:
         self.font_path_config = font_path_config
         self.wordcloud_enabled = bool(wordcloud_enabled)
         self.wordcloud_max_words = int(wordcloud_max_words)
+        self.wordcloud_retention_days = int(wordcloud_retention_days)
         self.day_hours = day_hours
         self._now_ts = now_ts  # 固定时钟（测试注入），None=真实时间
         self._font: Path | None | bool = False  # False=未探测
@@ -268,9 +271,18 @@ class StatisticsService:
                     font,
                     max_words=img_words,
                 )
+        # 顺手清理过期词云图：仅删本插件命名的 wc_*.png，按 mtime 判断（<=0 关闭）
+        if self.wordcloud_retention_days > 0 and self.output_dir is not None:
+            cutoff = time.time() - self.wordcloud_retention_days * 86400
+            for old_png in self.output_dir.glob("wc_*.png"):
+                try:
+                    if old_png.stat().st_mtime < cutoff:
+                        old_png.unlink()
+                except OSError:
+                    pass
         return image_path, pairs, sum(counter.values())
 
-    # ---------- 群统计：Emoji / QQ 表情 / 类型与媒体 / 长度 / 转发 ----------
+    # ---------- 群统计：Emoji / 类型与媒体 / 长度 / 转发 ----------
 
     def emoji_stats(self, r: TimeRange, group_id, top_n: int | None = None):
         gid = self._require_group(group_id)
@@ -278,13 +290,6 @@ class StatisticsService:
         if not counter:
             raise ServiceError(f"{r.label}（{describe_span(r)}）范围内没有 Emoji 记录。")
         return counter.most_common(top_n or self.default_top_n)
-
-    def face_stats(self, r: TimeRange, group_id, top_n: int | None = None):
-        gid = self._require_group(group_id)
-        rows = self.repo.get_face_stats(r, group_id=gid, limit=top_n or self.default_top_n)
-        if not rows:
-            raise ServiceError(f"{r.label}（{describe_span(r)}）范围内没有 QQ 表情记录。")
-        return rows
 
     def media_stats(self, r: TimeRange, group_id):
         gid = self._require_group(group_id)

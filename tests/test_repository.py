@@ -84,13 +84,6 @@ def test_count_by_hour_cross_midnight(repo, week):
     assert night + day == repo.get_message_count(week, group_id=G1)
 
 
-def test_face_stats_structured(repo, week):
-    rows = repo.get_face_stats(week, group_id=G1, limit=10)
-    d = dict(rows)
-    assert d.get(123) == 2
-    assert d.get(45) == 1
-
-
 def test_forward_stats_structured(repo, week):
     fwd_total, msg_total, entries = repo.get_forward_stats(week, group_id=G1, limit=10)
     assert fwd_total == 3  # u1×2 + u2×1
@@ -188,6 +181,5 @@ def test_empty_database(tmp_path):
     week = resolve_range("7天", TZ, now_ts=NOW)
     assert r.get_message_count(week, group_id=G1) == 0
     assert r.get_activity_by_day(week, group_id=G1, offset_seconds=28800) == []
-    assert r.get_face_stats(week, group_id=G1) == []
     assert r.get_forward_stats(week, group_id=G1) == (0, 0, [])
     assert r.get_lengths(week, group_id=G1) == []

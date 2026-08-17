@@ -208,15 +208,6 @@ def fmt_emoji_freq(title: str, pairs) -> str:
     return "\n".join(lines)
 
 
-def fmt_face_freq(title: str, pairs) -> str:
-    lines = [title, "（QQ 表情以 ChatLogger 记录的 face ID 呈现）"]
-    for i, (fid, count) in enumerate(pairs, 1):
-        lines.append(f"{i}. [表情{fid}]  {count}")
-    if not pairs:
-        lines.append("该范围内没有 QQ 表情记录")
-    return "\n".join(lines)
-
-
 def fmt_length(title: str, stats: dict) -> str:
     if not stats or stats.get("n", 0) == 0:
         return title + "\n该范围内没有文本消息"

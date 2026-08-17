@@ -4,7 +4,7 @@
 - 只读（连接由 db.ChatlogDB 以 mode=ro 提供），参数绑定，禁止拼接值
 - 统计用户行为恒过滤 sender_type='user'，bot 消息不计（口径见 README）
 - 时间过滤 ts >= ? AND ts < ?，配合 (group_id, ts)/(user_id, ts)/(ts) 索引
-- QQ 表情 / 转发 / @网络 使用 JSON 结构化函数（json_each/json_extract），
+- 转发 / @网络 使用 JSON 结构化函数（json_each/json_extract），
   且一律先经 json_valid 内层过滤——content_json 可能被 chatlogger 截断为非法 JSON
 
 唤醒消息（waked_bot）过滤分场景：
@@ -342,25 +342,6 @@ class ChatlogRepository:
             params + cond_params + [limit],
         )
         return [row[0] for row in rows]
-
-    # ---------- QQ 表情（结构化 face 段，纯 SQL 聚合） ----------
-
-    def get_face_stats(
-        self, r: TimeRange, group_id=None, user_id=None, limit: int = 10
-    ) -> list[tuple[int, int]]:
-        where, params = self._where(r, group_id, user_id, extra=[_JSON_OK])
-        rows = self._query(
-            f"""
-            SELECT json_extract(seg.value, '$.id') AS fid, COUNT(*) AS c
-            FROM (SELECT content_json FROM messages WHERE {where}) m,
-                 json_each(m.content_json) seg
-            WHERE json_extract(seg.value, '$.t') = 'face'
-                  AND json_extract(seg.value, '$.id') IS NOT NULL
-            GROUP BY fid ORDER BY c DESC, fid LIMIT ?
-            """,
-            params + [limit],
-        )
-        return [(int(f), int(c)) for f, c in rows]
 
     # ---------- 媒体 / 消息类型 ----------
 
