@@ -495,6 +495,20 @@ class StatisticsService:
             "change_count": max(0, len(rows) - 1),
         }
 
+    def user_full(self, r: TimeRange, user_id, group_id=None) -> dict:
+        """完整画像：六视图合一（综合/活跃/关键词/风格/互动/机器人）。
+
+        综合卡片内部会重复取活跃与风格原料，量级小且结果整体进 TTL 缓存，不做去重。
+        """
+        return {
+            "card": self.user_summary(r, user_id, group_id),
+            "activity": self.user_activity(r, user_id, group_id),
+            "keywords": self.user_keywords(r, user_id, group_id),
+            "style": self.user_style(r, user_id, group_id),
+            "social": self.user_social(r, user_id, group_id),
+            "bot": self.user_bot(r, user_id, group_id),
+        }
+
     # ---------- 群画像 ----------
 
     def group_profile(self, group_id, top_n: int | None = None) -> dict:

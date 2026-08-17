@@ -208,6 +208,20 @@ def test_render_user_outputs(service, all_range):
     b = render.fmt_user_bot(service.user_bot(all_range, U1, G1))
     assert "Bot 互动" in b and "私聊会话" in b
     n = render.fmt_user_names(service.user_names(U1), service.tz)
+
+
+def test_user_full_merges_all_views(service, all_range):
+    """user_full 六视图齐全，fmt_user_full 逐段包含各视图标题。"""
+    from insight import render
+
+    p = service.user_full(all_range, U1, G1)
+    assert set(p) == {"card", "activity", "keywords", "style", "social", "bot"}
+    text = render.fmt_user_full("三哥", p, service.tz)
+    assert "用户画像 — 三哥" in text
+    assert "活跃规律" in text and "讨论关键词" in text
+    assert "消息风格" in text and "互动关系" in text and "Bot 互动" in text
+    assert text.count("————") == 5  # 六段以分隔线相连
+    n = render.fmt_user_names(service.user_names(U1), service.tz)
     assert "昵称历史" in n and "张三" in n
     g = render.fmt_group_profile(service.group_profile(G1), service.tz)
     assert "群画像" in g and "非群成员总数" in g

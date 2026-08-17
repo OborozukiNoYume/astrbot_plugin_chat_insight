@@ -309,6 +309,19 @@ def fmt_user_bot(p: dict) -> str:
     return "\n".join(lines)
 
 
+def fmt_user_full(name: str, p: dict, tz: ZoneInfo) -> str:
+    """完整画像（/用户画像）：六视图合并输出。"""
+    blocks = [
+        fmt_user_card(name, p["card"], tz),
+        fmt_user_activity(p["activity"]),
+        fmt_user_keywords(p["keywords"]),
+        fmt_user_style(p["style"]),
+        fmt_user_social(p["social"]),
+        fmt_user_bot(p["bot"]),
+    ]
+    return "\n\n————\n\n".join(b for b in blocks if b)
+
+
 def fmt_user_names(p: dict, tz: ZoneInfo) -> str:
     lines = [f"🏷️ 昵称历史（当前: {p['current']}，变更 {p['change_count']} 次）"]
     for name, first, last, count in p["entries"]:

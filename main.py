@@ -53,23 +53,8 @@ _USER_ERRORS = (ServiceError, DatabaseNotAvailable, SchemaIncompatible)
 # 本插件命令词：带唤醒前缀/@Bot 时让命令通道处理，避免双响应
 _PLUGIN_COMMAND_WORDS = frozenset(
     {"统计", "chatstats", "聊天统计", "发言榜", "发言排行", "rank", "词云", "wordcloud",
-     "用户画像", "profile", "群画像"}
+     "用户画像", "profile", "昵称", "names", "群画像", "画像维护"}
 )
-
-PROFILE_HELP = """📊 用户画像 — 子命令（时间参数可选，默认「历史」全期）
-/用户画像 综合 [@某人] [时间] 综合画像（查他人需管理员）
-/用户画像 活跃 [时间]      24h 分布 / 昼夜 / 连续活跃
-/用户画像 关键词 [时间]    讨论关键词（全期 vs 近 30 天）
-/用户画像 风格 [时间]      长度分位 / 连发 / 媒体偏好
-/用户画像 互动 [时间]      回复 / @ 互动网络
-/用户画像 机器人 [时间]    Bot 互动画像
-/用户画像 昵称             昵称历史
-/群画像                    当前群画像
-/用户画像 刷新             清空画像缓存（管理员）
-/用户画像 状态             数据库契约检查（管理员）
-
-数据来自 astrbot_plugin_chatlogger（只读），默认仅统计当前群。"""
-
 
 @register(
     PLUGIN_NAME,
@@ -489,20 +474,11 @@ class ChatInsight(Star):
         async for r in self._wordcloud_impl(event, [t for t in (a, b, c, d, e) if t]):
             yield r
 
-    # ---------- 命令入口④：/用户画像 指令组 ----------
+    # ---------- 命令入口④：/用户画像（六视图合并） 与 /昵称（公开） ----------
 
-    @filter.command_group("用户画像", alias={"profile"})
-    def profile(self):
-        """用户画像指令组"""
-
-    @profile.command("帮助", alias={"help"})
-    async def profile_help(self, event: AstrMessageEvent):
-        """查看子命令列表"""
-        yield event.plain_result(PROFILE_HELP)
-
-    @profile.command("综合", alias={"me"})
-    async def profile_me(self, event: AstrMessageEvent, a: str = None, b: str = None):
-        """综合画像（默认自己；@他人需管理员）"""
+    @filter.command("用户画像", alias={"profile"})
+    async def cmd_profile(self, event: AstrMessageEvent, a: str = None, b: str = None):
+        """完整用户画像：/用户画像 [@某人] [用户 <QQ号|我>] [时间]（查他人需管理员）"""
         try:
             svc = self._svc()
             ctx, err = await self._prepare_user(event, [t for t in (a, b) if t])
@@ -510,75 +486,21 @@ class ChatInsight(Star):
                 yield event.plain_result(err)
                 return
             uid, gid, r = ctx
-            p = await self._build_user("card", "user_summary", r, uid, gid)
+            p = await self._build_user("full", "user_full", r, uid, gid)
             name = await asyncio.to_thread(svc.repo.get_display_name, uid, gid)
-            yield event.plain_result(render.fmt_user_card(name, p, svc.tz))
+            yield event.plain_result(render.fmt_user_full(name, p, svc.tz))
         except _USER_ERRORS as e:
             yield event.plain_result(f"⚠️ {e}")
         except Exception as e:
-            logger.error(f"[insight] profile me 失败: {e}", exc_info=True)
+            logger.error(f"[insight] 用户画像失败: {e}", exc_info=True)
             yield event.plain_result("查询失败，请稍后重试（详情见日志）。")
 
-    async def _user_view(self, event: AstrMessageEvent, tokens: list[str], view: str):
-        """用户画像子命令公共实现：view ∈ {activity, keywords, style, social, bot, names}。"""
+    @filter.command("昵称", alias={"names"})
+    async def cmd_names(self, event: AstrMessageEvent, a: str = None, b: str = None):
+        """昵称历史：/昵称 [@某人]（全局属性，不受群范围限制，查他人需管理员）"""
         try:
             svc = self._svc()
-            ctx, err = await self._prepare_user(event, tokens)
-            if err:
-                yield event.plain_result(err)
-                return
-            uid, gid, r = ctx
-            fn = {
-                "activity": ("user_activity", lambda p: render.fmt_user_activity(p)),
-                "keywords": ("user_keywords", lambda p: render.fmt_user_keywords(p)),
-                "style": ("user_style", lambda p: render.fmt_user_style(p)),
-                "social": ("user_social", lambda p: render.fmt_user_social(p)),
-                "bot": ("user_bot", lambda p: render.fmt_user_bot(p)),
-            }[view]
-            p = await self._build_user(view, fn[0], r, uid, gid)
-            yield event.plain_result(fn[1](p))
-        except _USER_ERRORS as e:
-            yield event.plain_result(f"⚠️ {e}")
-        except Exception as e:
-            logger.error(f"[insight] profile {view} 失败: {e}", exc_info=True)
-            yield event.plain_result("查询失败，请稍后重试（详情见日志）。")
-
-    @profile.command("活跃", alias={"activity"})
-    async def profile_activity(self, event: AstrMessageEvent, a: str = None, b: str = None):
-        """活跃规律：24h 分布 / 昼夜 / 连续活跃"""
-        async for r in self._user_view(event, [t for t in (a, b) if t], "activity"):
-            yield r
-
-    @profile.command("关键词", alias={"keywords"})
-    async def profile_keywords(self, event: AstrMessageEvent, a: str = None, b: str = None):
-        """讨论关键词（全期 vs 近 30 天）"""
-        async for r in self._user_view(event, [t for t in (a, b) if t], "keywords"):
-            yield r
-
-    @profile.command("风格", alias={"style"})
-    async def profile_style(self, event: AstrMessageEvent, a: str = None, b: str = None):
-        """消息风格：长度分位 / 连发 / 媒体偏好"""
-        async for r in self._user_view(event, [t for t in (a, b) if t], "style"):
-            yield r
-
-    @profile.command("互动", alias={"social"})
-    async def profile_social(self, event: AstrMessageEvent, a: str = None, b: str = None):
-        """互动关系：回复 / @ 网络"""
-        async for r in self._user_view(event, [t for t in (a, b) if t], "social"):
-            yield r
-
-    @profile.command("机器人", alias={"bot"})
-    async def profile_bot(self, event: AstrMessageEvent, a: str = None, b: str = None):
-        """Bot 互动画像"""
-        async for r in self._user_view(event, [t for t in (a, b) if t], "bot"):
-            yield r
-
-    @profile.command("昵称", alias={"names"})
-    async def profile_names(self, event: AstrMessageEvent, a: str = None):
-        """昵称历史（全局属性，不受群范围限制）"""
-        try:
-            svc = self._svc()
-            ctx, err = await self._prepare_user(event, [t for t in (a,) if t])
+            ctx, err = await self._prepare_user(event, [t for t in (a, b) if t])
             if err:
                 yield event.plain_result(err)
                 return
@@ -588,7 +510,7 @@ class ChatInsight(Star):
         except _USER_ERRORS as e:
             yield event.plain_result(f"⚠️ {e}")
         except Exception as e:
-            logger.error(f"[insight] profile names 失败: {e}", exc_info=True)
+            logger.error(f"[insight] 昵称失败: {e}", exc_info=True)
             yield event.plain_result("查询失败，请稍后重试（详情见日志）。")
 
     # ---------- 群画像（公开，仅群聊） ----------
@@ -610,9 +532,13 @@ class ChatInsight(Star):
             logger.error(f"[insight] 群画像失败: {e}", exc_info=True)
             yield event.plain_result("查询失败，请稍后重试（详情见日志）。")
 
-    # ---------- 管理子命令 ----------
+    # ---------- 画像维护（仅管理员；裸调用由框架自动列出子命令） ----------
 
-    @profile.command("状态", alias={"status"})
+    @filter.command_group("画像维护", alias={"insight-admin"})
+    def profile_admin(self):
+        """画像维护指令组"""
+
+    @profile_admin.command("状态", alias={"status"})
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def profile_status(self, event: AstrMessageEvent):
         """数据库契约检查：路径 / schema 版本 / 消息量 / 时间跨度"""
@@ -634,7 +560,7 @@ class ChatInsight(Star):
             f"{'开 ' + str(self.cache.ttl // 60) + ' 分钟' if self.cache.enabled else '关'}"
         )
 
-    @profile.command("刷新", alias={"refresh"})
+    @profile_admin.command("刷新", alias={"refresh"})
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def profile_refresh(self, event: AstrMessageEvent):
         """清空画像缓存并刷新 Bot ID 识别"""
