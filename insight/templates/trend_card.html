@@ -44,7 +44,7 @@
   .stat .v { font-size: 21px; font-weight: 700; color: #0f766e; }
   .stat .l { font-size: 12px; color: #6b7280; margin-top: 2px; }
   .stat .s { font-size: 10.5px; color: #9ca3af; margin-top: 1px; }
-  .section { padding: 20px 24px 4px; }
+  .section { padding: 20px 24px 8px; }
   .sec-title {
     display: flex; align-items: center; font-size: 15px; font-weight: 600;
     margin-bottom: 14px;
@@ -54,30 +54,18 @@
     background: linear-gradient(#1f8a8a, #4fc3a1); margin-right: 8px;
   }
   .sec-title .hint { font-size: 11px; color: #9ca3af; font-weight: 400; margin-left: 8px; }
-  .overview-line {
-    font-size: 12.5px; color: #6b7280; padding: 8px 12px;
-    background: #f4f9f8; border-radius: 8px;
-  }
-  .overview-line b { color: #0f766e; }
-  .rrow { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
-  .medal {
-    width: 22px; height: 22px; border-radius: 50%; flex: none;
-    display: flex; align-items: center; justify-content: center;
-    font-size: 12px; font-weight: 700; color: #fff; background: #b9c2d0;
-  }
-  .medal.m1 { background: linear-gradient(135deg,#f59e0b,#f97316); }
-  .medal.m2 { background: linear-gradient(135deg,#94a3b8,#64748b); }
-  .medal.m3 { background: linear-gradient(135deg,#d97706,#b45309); }
-  .rname { width: 118px; flex: none; font-size: 13.5px; overflow: hidden;
-           text-overflow: ellipsis; white-space: nowrap; }
-  .rbar { flex: 1; height: 10px; border-radius: 5px; background: #eef0f6; overflow: hidden; }
-  .rbar span { display: block; height: 100%; border-radius: 5px;
-               background: linear-gradient(90deg,#2fa39b,#4fc3a1); }
-  .rcount { width: 64px; flex: none; text-align: right; font-size: 13px; font-weight: 600; }
-  .rpct { width: 52px; flex: none; text-align: right; font-size: 11.5px; color: #9ca3af; }
-  .empty { font-size: 12.5px; color: #9ca3af; padding: 4px 0; }
+  .chart-box { background: #f4f9f8; border-radius: 12px; padding: 16px 16px 10px; }
+  .cols { display: flex; align-items: flex-end; gap: 3px; height: 120px; }
+  .col { flex: 1; display: flex; flex-direction: column; align-items: center;
+         justify-content: flex-end; height: 100%; }
+  .bar { width: 100%; border-radius: 3px 3px 1px 1px; background: #a7d5cd; }
+  .col.peak .bar { background: linear-gradient(#1f8a8a, #4fc3a1); }
+  .ticks { display: flex; gap: 3px; margin-top: 5px; }
+  .ticks span { flex: 1; text-align: center; font-size: 9px; color: #b0b7c8;
+                font-family: "SF Mono", Consolas, monospace; }
+  .empty { font-size: 12.5px; color: #9ca3af; padding: 6px 0; text-align: center; }
   .footer {
-    margin-top: 20px; padding: 14px 24px 16px; border-top: 1px solid #eef0f6;
+    margin-top: 16px; padding: 14px 24px 16px; border-top: 1px solid #eef0f6;
     display: flex; justify-content: space-between; font-size: 11px; color: #b0b7c8;
   }
 </style>
@@ -94,7 +82,7 @@
       </div>
     </div>
     <div class="hd-badges">
-      <span class="badge">{{ title_badge }}</span>
+      <span class="badge">按天趋势</span>
       <span class="badge">{{ range_label }} · {{ span }}</span>
     </div>
     <div class="hd-times">统计区间 {{ span }}</div>
@@ -110,26 +98,27 @@
     {% endfor %}
   </div>
 
-  {% if days_with_data %}
   <div class="section">
-    <div class="overview-line">区间内有记录 <b>{{ days_with_data }}</b>；峰值日 <b>{{ stats[3].s }}</b> 达 <b>{{ stats[3].value }}</b> 条</div>
-  </div>
-  {% endif %}
-
-  {% if rank_rows %}
-  <div class="section">
-    <div class="sec-title">发言榜<span class="hint">共 {{ rank_total }} 条消息</span></div>
-    {% for r in rank_rows %}
-    <div class="rrow">
-      <div class="medal {% if r.i == 1 %}m1{% elif r.i == 2 %}m2{% elif r.i == 3 %}m3{% endif %}">{{ r.i }}</div>
-      <div class="rname">{{ r.name | safe }}</div>
-      <div class="rbar"><span style="width: {{ r.wpx }}%"></span></div>
-      <div class="rcount">{{ r.count }} 条</div>
-      <div class="rpct">{{ r.pct }}</div>
+    <div class="sec-title">逐日消息量
+      <span class="hint">柱高=消息条数 · 深色为峰值日 · 含空白天</span>
     </div>
-    {% endfor %}
+    <div class="chart-box">
+      {% if days %}
+      <div class="cols">
+        {% for d in days %}
+        <div class="col{% if d.peak %} peak{% endif %}">
+          <div class="bar" style="height: {{ d.hpx }}px"></div>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="ticks">
+        {% for d in days %}<span>{{ d.tick }}</span>{% endfor %}
+      </div>
+      {% else %}
+      <div class="empty">该范围内没有消息</div>
+      {% endif %}
+    </div>
   </div>
-  {% endif %}
 
   <div class="footer">
     <span>Chat Insight · 基于 ChatLogger 只读统计</span>

@@ -152,6 +152,16 @@ class ChatInsight(Star):
         return self.service
 
     @staticmethod
+    async def _group_name(svc: StatisticsService, event: AstrMessageEvent) -> str:
+        """统计卡片头部群名；群无记录或异常时退回群号。"""
+        gid = str(event.get_group_id() or "")
+        try:
+            meta = await asyncio.to_thread(svc.repo.get_group_meta, gid)
+            return meta[0] or gid
+        except _USER_ERRORS:
+            return gid
+
+    @staticmethod
     def _normalize_args(time_spec, top_n):
         """(time_spec, top_n) 灵活归一：`/排行 10` 里的 10 视为条数而非时间。"""
         if time_spec is not None and _NUM_RE.match(str(time_spec).strip()):
@@ -316,6 +326,14 @@ class ChatInsight(Star):
             spec, _ = self._normalize_args(time_spec, top_n)
             r = svc.resolve(spec)
             s = await asyncio.to_thread(svc.summary, r, event.get_group_id())
+            if self._render_mode == "image":
+                name = await self._group_name(svc, event)
+                image = await cardrender.render_summary_card(
+                    self, name, event.get_group_id(), s, svc.tz
+                )
+                if image:
+                    yield event.image_result(image)
+                    return
             yield event.plain_result(render.fmt_summary(s))
         except _USER_ERRORS as e:
             yield event.plain_result(f"⚠️ {e}")
@@ -419,6 +437,15 @@ class ChatInsight(Star):
             spec, _ = self._normalize_args(time_spec, top_n)
             r = svc.resolve(spec)
             days = await asyncio.to_thread(svc.trend, r, event.get_group_id())
+            if self._render_mode == "image":
+                name = await self._group_name(svc, event)
+                image = await cardrender.render_trend_card(
+                    self, name, event.get_group_id(), r.label, describe_span(r),
+                    days, svc.tz,
+                )
+                if image:
+                    yield event.image_result(image)
+                    return
             yield event.plain_result(
                 render.fmt_day_trend(f"📈 按天趋势 · {r.label}（{describe_span(r)}）", days)
             )
@@ -437,6 +464,15 @@ class ChatInsight(Star):
             spec, _ = self._normalize_args(time_spec, top_n)
             r = svc.resolve(spec)
             buckets = await asyncio.to_thread(svc.hours, r, event.get_group_id())
+            if self._render_mode == "image":
+                name = await self._group_name(svc, event)
+                image = await cardrender.render_hours_card(
+                    self, name, event.get_group_id(), r.label, describe_span(r),
+                    buckets, svc.tz,
+                )
+                if image:
+                    yield event.image_result(image)
+                    return
             yield event.plain_result(
                 render.fmt_hours(f"🕐 24 小时分布 · {r.label}（{describe_span(r)}）", buckets)
             )

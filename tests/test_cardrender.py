@@ -270,3 +270,74 @@ def test_render_group_card_paths(service):
     assert asyncio.run(
         cardrender.render_group_card(_FakeStar(result="x"), G1, p, TZ)
     ) is None
+
+
+# ---------- /聊天统计 子命令卡片（总览 / 趋势 / 时段） ----------
+
+def test_build_summary_card_data(service):
+    r = resolve_range("7天", TZ, now_ts=NOW)
+    s = service.summary(r, G1)
+    data = cardrender.build_summary_card_data("测试群一", G1, s, TZ)
+    assert data["title_badge"] == "群活跃度总览"
+    assert data["rank_rows"] == []  # 复用群报模板但不渲染发言榜区块
+    assert data["stats"][0]["value"] == f"{s['messages']:,}"
+    assert "days_with_data" in data
+
+
+def test_build_trend_card_data(service):
+    r = resolve_range("7天", TZ, now_ts=NOW)
+    days = service.trend(r, G1)
+    data = cardrender.build_trend_card_data("测试群一", G1, r.label, "x ~ y", days, TZ)
+    assert len(data["days"]) == len(days)  # 含空白天
+    peak_cols = [d for d in data["days"] if d["peak"]]
+    assert peak_cols and peak_cols[0]["count"] == max(d.messages for d in days)
+    ticks = [d["tick"] for d in data["days"] if d["tick"]]
+    assert len(ticks) >= 2 and all(len(t) == 5 for t in ticks)  # MM-DD
+
+
+def test_build_hours_card_data(service):
+    r = resolve_range("7天", TZ, now_ts=NOW)
+    buckets = service.hours(r, G1)
+    data = cardrender.build_hours_card_data("测试群一", G1, r.label, "x ~ y", buckets, TZ)
+    assert len(data["hours"]) == 24
+    assert sum(1 for h in data["hours"] if h["peak"]) <= 3  # Top3 高亮
+    total = sum(buckets)
+    day_ratio = (sum(buckets[h] for h in range(6, 18)) / total) if total else 0.0
+    assert data["stats"][2]["value"] == f"{day_ratio * 100:.1f}%"
+
+
+def test_stat_subcommand_templates_render_locally(service):
+    r = resolve_range("7天", TZ, now_ts=NOW)
+    env = Environment(autoescape=False)
+    s = service.summary(r, G1)
+    html = env.from_string(cardrender.load_template("report_card")).render(
+        cardrender.build_summary_card_data("测试群一", G1, s, TZ)
+    )
+    assert "群活跃度总览" in html and "发言榜" not in html
+    days = service.trend(r, G1)
+    html = env.from_string(cardrender.load_template("trend_card")).render(
+        cardrender.build_trend_card_data("测试群一", G1, r.label, "x ~ y", days, TZ)
+    )
+    assert "按天趋势" in html and "逐日消息量" in html
+    buckets = service.hours(r, G1)
+    html = env.from_string(cardrender.load_template("hours_card")).render(
+        cardrender.build_hours_card_data("测试群一", G1, r.label, "x ~ y", buckets, TZ)
+    )
+    assert "24 小时分布" in html and "逐时消息量" in html
+
+
+def test_stat_subcommand_cards_fall_back(service):
+    r = resolve_range("7天", TZ, now_ts=NOW)
+    star = _FakeStar(result="x")  # 非图片路径
+    s = service.summary(r, G1)
+    assert asyncio.run(
+        cardrender.render_summary_card(star, "测试群一", G1, s, TZ)
+    ) is None
+    assert asyncio.run(
+        cardrender.render_trend_card(star, "测试群一", G1, r.label, "x",
+                                     service.trend(r, G1), TZ)
+    ) is None
+    assert asyncio.run(
+        cardrender.render_hours_card(star, "测试群一", G1, r.label, "x",
+                                     service.hours(r, G1), TZ)
+    ) is None
