@@ -62,7 +62,7 @@ _PLUGIN_COMMAND_WORDS = frozenset(
     PLUGIN_NAME,
     "OborozukiNoYume",
     "聊天洞察：基于 ChatLogger 的群聊统计、发言排行、词云关键词、用户画像（只读）",
-    "0.4.4",
+    "0.4.5",
 )
 class ChatInsight(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -738,7 +738,8 @@ class ChatInsight(Star):
                     if p and text.startswith(p):
                         s = text[len(p):].strip()
                         stripped_texts.update({s, s.lower()})
-                firsts = {t.split()[0] for t in stripped_texts if t.split()}
+                # 首词判定跳过 At 渲染文本：「@某人 词云」的 At 在前语序同样放行
+                firsts = {colloquial.first_meaningful(t) for t in stripped_texts}
                 if not firsts & {"词云", "wordcloud"}:
                     return
             if personal:

@@ -16,6 +16,18 @@ import re
 # 命令解析遇到该形态时提取 QQ 号作为目标用户（兼容全角括号）
 AT_RENDER_RE = re.compile(r"^@.+?[(（](\d{1,20})[)）]$")
 
+
+def first_meaningful(text: str) -> str:
+    """首个有效词：跳过首段的 At 渲染文本（「@某人 词云」的指向性语序）。
+
+    用于口语触发放行判定——At 在前时第一个 token 是 @名字(QQ号)，
+    需看 At 之后的首词是否为命令词，否则该语序永远无法放行。
+    """
+    tokens = text.split()
+    if tokens and AT_RENDER_RE.match(tokens[0]):
+        tokens = tokens[1:]
+    return tokens[0] if tokens else ""
+
 # 时间关键词（长词在前，防"上月"吃掉"上上月"类歧义）
 _TIME_KEYWORDS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"(?:最近|近)\s*(\d{1,3})\s*[天日]"), "n_days"),

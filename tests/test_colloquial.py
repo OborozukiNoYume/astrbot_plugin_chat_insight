@@ -1,6 +1,15 @@
 """个人词云口语触发匹配。"""
 
-from insight.colloquial import AT_RENDER_RE, match_wordcloud
+from insight.colloquial import AT_RENDER_RE, first_meaningful, match_wordcloud
+
+
+def test_first_meaningful_skips_leading_at():
+    # 「@某人 词云」语序：首词判定需跳过 At 渲染文本，否则该形态永远无法放行
+    assert first_meaningful("@猜猜(2918354494) 词云") == "词云"
+    assert first_meaningful("@名字（123456） wordcloud") == "wordcloud"  # 全角括号,At 后含空格(平台实际渲染形态)
+    assert first_meaningful("词云") == "词云"
+    assert first_meaningful("@猜猜(2918354494) 你做个词云") == "你做个词云"  # 非命令词，不放行
+    assert first_meaningful("") == ""
 
 
 def test_at_render_token_extracts_qq():
