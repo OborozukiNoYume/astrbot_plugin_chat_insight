@@ -62,7 +62,7 @@ _PLUGIN_COMMAND_WORDS = frozenset(
     PLUGIN_NAME,
     "OborozukiNoYume",
     "聊天洞察：基于 ChatLogger 的群聊统计、发言排行、词云关键词、用户画像（只读）",
-    "0.4.5",
+    "0.4.6",
 )
 class ChatInsight(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -612,9 +612,10 @@ class ChatInsight(Star):
                     continue
 
                 def _next_target() -> datetime:
-                    hhmm = ":".join(
-                        str(self.config.get(k, d) or d)
-                        for k, d in (("report_hour", "08"), ("report_minute", "00"))
+                    # 时/分为 int 滑块且 0 是合法值（0 点），不可用 or 回退——会把 0 时吞成默认值
+                    hhmm = (
+                        f"{int(self.config.get('report_hour', 8))}:"
+                        f"{int(self.config.get('report_minute', 0))}"
                     )
                     return report.next_report_dt(
                         datetime.now(tz=svc.tz),

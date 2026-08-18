@@ -76,7 +76,7 @@ AstrBot → ChatLogger → chatlog.db → Chat Insight（本插件，只读）
 | `report_frequency` | `weekly` | 群报频率：每日（报昨日）/ 每周（报上周）/ 每月（报上月） |
 | `report_day` | `1` | 每周模式的星期（1=周一…7=周日） |
 | `report_day_of_month` | `1` | 每月模式的日期（1-31，超当月天数取月末） |
-| `report_hour` / `report_minute` | `08` / `00` | 群报触发时刻（时/分两个下拉，杜绝非法输入） |
+| `report_hour` / `report_minute` | `8` / `0` | 群报触发时刻（时/分两个滑块，杜绝非法输入） |
 | `report_groups` | `[]` | 目标群号列表（纯数字），留空不推送 |
 | `report_sections` | 全选 | 播报内容复选：总览 / 发言榜 / 关键词 / 词云 |
 | `report_min_messages` | `10` | 区间消息数低于该值的群自动跳过，`0` 不限制 |
