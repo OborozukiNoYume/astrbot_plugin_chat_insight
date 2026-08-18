@@ -134,12 +134,14 @@ def test_template_renders_escaped_name_safely():
 # ---------- render_user_card：降级路径 ----------
 
 class _FakeStar:
-    def __init__(self, result=None, error: Exception | None = None):
-        self.result, self.error = result, error
+    def __init__(self, result=None, error: Exception | None = None, hang: float = 0.0):
+        self.result, self.error, self.hang = result, error, hang
         self.calls = []
 
     async def html_render(self, tmpl, data, return_url=True, options=None):
         self.calls.append((tmpl, data, return_url, options))
+        if self.hang:
+            await asyncio.sleep(self.hang)  # 模拟渲染服务排队挂起
         if self.error:
             raise self.error
         return self.result
@@ -190,6 +192,15 @@ def test_render_rejects_non_image_response(user_full):
     bad = _FakeStar(result="/tmp/not_exist.png")  # 文件不存在
     assert asyncio.run(
         cardrender.render_user_card(bad, "三哥", U1, user_full, TZ)
+    ) is None
+
+
+def test_render_times_out_on_hanging_service(user_full, monkeypatch):
+    # 渲染服务排队挂起时框架 HTTP 客户端 5 分钟才超时；45 秒上限内必须主动放弃降级
+    monkeypatch.setattr(cardrender, "RENDER_TIMEOUT_SECONDS", 0.2)
+    star = _FakeStar(hang=5)
+    assert asyncio.run(
+        cardrender.render_user_card(star, "三哥", U1, user_full, TZ)
     ) is None
 
 

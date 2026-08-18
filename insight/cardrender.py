@@ -11,6 +11,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import html
 import logging
 from datetime import datetime
@@ -22,6 +23,10 @@ from .service import ServiceError
 
 # 与 AstrBot LogManager 同名 logger：宿主环境进统一日志，独立测试零依赖
 logger = logging.getLogger("astrbot")
+
+# 渲染服务偶发排队/挂起（框架 HTTP 客户端默认 5 分钟才超时），超过该秒数
+# 立即放弃并降级文本，避免群里长时间无响应。正常渲染耗时 5~12 秒。
+RENDER_TIMEOUT_SECONDS = 45
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 
@@ -191,18 +196,11 @@ def build_user_card_data(name: str, uid: str, p: dict, tz: ZoneInfo) -> dict:
 async def render_user_card(star, name: str, uid: str, p: dict, tz: ZoneInfo) -> str | None:
     """渲染用户画像卡片，返回图片路径；模板缺失或渲染失败返回 None（降级文本）。"""
     try:
-        tmpl = load_template("user_profile")
         data = build_user_card_data(name, uid, p, tz)
-        # png 保证小字号清晰（框架默认 jpeg q40 对文字过糊）
-        path = await star.html_render(tmpl, data, return_url=False,
-                                      options={"type": "png"})
-        if not path or not _is_image_file(str(path)):
-            return None
-        logger.info(f"[insight] 用户画像卡片已渲染: {path}")
-        return str(path)
     except Exception as e:
-        logger.warning(f"[insight] 用户画像卡片渲染失败，回退文本: {e}")
+        logger.warning(f"[insight] 用户画像卡片数据组装失败，回退文本: {e}")
         return None
+    return await _render_card(star, "user_profile", data, "用户画像")
 
 
 # ---------- 群报卡片 ----------
@@ -263,18 +261,7 @@ def build_report_card_data(service, group_id, sections, top_n=None,
 
 async def render_report_card(star, data: dict) -> str | None:
     """渲染群报卡片，失败返回 None（降级文本群报）。"""
-    try:
-        path = await star.html_render(
-            load_template("report_card"), data, return_url=False,
-            options={"type": "png"},
-        )
-        if not path or not _is_image_file(str(path)):
-            return None
-        logger.info(f"[insight] 群报卡片已渲染: {path}")
-        return str(path)
-    except Exception as e:
-        logger.warning(f"[insight] 群报卡片渲染失败，回退文本: {e}")
-        return None
+    return await _render_card(star, "report_card", data, "群报")
 
 
 # ---------- 群画像卡片 ----------
@@ -347,17 +334,11 @@ def build_group_card_data(group_id: str, p: dict, tz: ZoneInfo) -> dict:
 async def render_group_card(star, group_id: str, p: dict, tz: ZoneInfo) -> str | None:
     """渲染群画像卡片，失败返回 None（降级文本）。"""
     try:
-        path = await star.html_render(
-            load_template("group_profile"), build_group_card_data(group_id, p, tz),
-            return_url=False, options={"type": "png"},
-        )
-        if not path or not _is_image_file(str(path)):
-            return None
-        logger.info(f"[insight] 群画像卡片已渲染: {path}")
-        return str(path)
+        data = build_group_card_data(group_id, p, tz)
     except Exception as e:
-        logger.warning(f"[insight] 群画像卡片渲染失败，回退文本: {e}")
+        logger.warning(f"[insight] 群画像卡片数据组装失败，回退文本: {e}")
         return None
+    return await _render_card(star, "group_profile", data, "群画像")
 
 
 # ---------- /聊天统计 子命令卡片（总览 / 趋势 / 时段） ----------
@@ -455,10 +436,15 @@ def build_hours_card_data(group_name: str, group_id, r_label: str, span: str,
 
 
 async def _render_card(star, template: str, data: dict, label: str) -> str | None:
-    """三张统计子命令卡片的共用渲染封装。"""
+    """全部卡片的共用渲染封装：超时/异常/非图片响应一律返回 None（降级文本）。"""
     try:
-        path = await star.html_render(
-            load_template(template), data, return_url=False, options={"type": "png"},
+        # png 保证小字号清晰（框架默认 jpeg q40 对文字过糊）
+        path = await asyncio.wait_for(
+            star.html_render(
+                load_template(template), data, return_url=False,
+                options={"type": "png"},
+            ),
+            timeout=RENDER_TIMEOUT_SECONDS,
         )
         if not path or not _is_image_file(str(path)):
             return None
