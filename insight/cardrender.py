@@ -246,14 +246,6 @@ def build_report_card_data(service, group_id, sections, top_n=None,
             entries, total = [], 0
     rank_max = max((e.count for e in entries), default=0)
 
-    pairs = []
-    if "keywords" in sections:
-        try:
-            pairs, _ = service.keywords(r, group_id, None, top_n)
-        except ServiceError:
-            pairs = []
-    kw_max = pairs[0][1] if pairs else 1
-
     return {
         "group_name": _esc(group_name),
         "group_id": str(group_id),
@@ -278,11 +270,6 @@ def build_report_card_data(service, group_id, sections, top_n=None,
                 "wpx": round(e.count / rank_max * 100) if rank_max else 0,
             }
             for i, e in enumerate(entries, 1)
-        ],
-        "keywords": [
-            {"word": _esc(w), "count": c,
-             "size": round(13 + (c / kw_max) * 7, 1), "hot": c == kw_max}
-            for w, c in pairs
         ],
     }
 

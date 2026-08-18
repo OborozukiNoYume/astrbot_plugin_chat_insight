@@ -194,7 +194,7 @@ def test_render_rejects_non_image_response(user_full):
 
 # ---------- 群报卡片 ----------
 
-ALL_SECTIONS = ("summary", "rank", "keywords", "wordcloud")
+ALL_SECTIONS = ("summary", "rank", "wordcloud")
 
 
 def test_build_report_card_data(service):
@@ -203,18 +203,18 @@ def test_build_report_card_data(service):
     )
     assert data["group_name"] == "测试群一"
     assert data["period_label"] == "昨日"
-    # 发言榜：u1 三哥榜首，条形宽度最大
+    # 发言榜：u1 三哥榜首，条形宽度最大；关键词已并入词云，卡片不再输出
     assert data["rank_rows"][0]["name"] == "三哥"
     assert data["rank_rows"][0]["wpx"] == 100
     assert data["rank_rows"][0]["pct"].endswith("%")
-    assert data["keywords"] and data["keywords"][0]["hot"] is True
+    assert "keywords" not in data
 
 
 def test_build_report_card_data_skips_ranks_section(service):
     data = cardrender.build_report_card_data(
         service, G1, ("summary",), None, 0, "daily"
     )
-    assert data["rank_rows"] == [] and data["keywords"] == []
+    assert data["rank_rows"] == []
 
 
 def test_build_report_card_data_silent_group(service):
@@ -230,7 +230,7 @@ def test_report_card_template_renders_locally(service):
     html = Environment(autoescape=False).from_string(
         cardrender.load_template("report_card")
     ).render(data)
-    assert "发言榜" in html and "高频关键词" in html and "三哥" in html
+    assert "发言榜" in html and "高频关键词" not in html and "三哥" in html
 
 
 def test_render_report_card_paths(service):

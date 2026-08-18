@@ -82,7 +82,7 @@ def test_build_report_weekly(repo, stopwords, tmp_path):
     svc = make_svc(repo, stopwords, tmp_path, NOW + 7 * 86400)  # 08-22
     title, text, image_path = report.build_report(svc, G1, report.SECTIONS, None, 0, "weekly")
     assert "上周群报" in title
-    assert "发言榜" in text and "高频关键词" in text
+    assert "发言榜" in text and "高频关键词" not in text  # 关键词分节已砍：词云即其可视化
     assert image_path is not None and image_path.exists()
 
 

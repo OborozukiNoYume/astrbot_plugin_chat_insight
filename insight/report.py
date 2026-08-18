@@ -20,9 +20,10 @@ FREQ_LABELS = {"daily": "每日", "weekly": "每周", "monthly": "每月"}
 PERIOD_SPEC = {"daily": "yesterday", "weekly": "lastweek", "monthly": "lastmonth"}
 PERIOD_LABEL = {"daily": "昨日", "weekly": "上周", "monthly": "上月"}
 
-# 播报内容分节（顺序即输出顺序；标识进入配置 report_sections 的 options）
-SECTIONS = ("summary", "rank", "keywords", "wordcloud")
-SECTION_LABELS = {"summary": "总览", "rank": "发言榜", "keywords": "关键词", "wordcloud": "词云"}
+# 播报内容分节（顺序即输出顺序；标识进入配置 report_sections 的 options）。
+# 无独立"关键词"分节：词云即关键词的可视化（无文本时自动降级文字版词频）。
+SECTIONS = ("summary", "rank", "wordcloud")
+SECTION_LABELS = {"summary": "总览", "rank": "发言榜", "wordcloud": "词云"}
 
 _HHMM_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]?\d)$")  # 兼容 H:M / HH:MM 等写法
 
@@ -117,12 +118,6 @@ def build_report(service, group_id, sections, top_n=None, min_messages: int = 0,
         try:
             entries, total = service.rank(r, group_id, top_n)
             lines.append(render.fmt_rank("🏆 发言榜", entries, total))
-        except ServiceError:
-            pass
-    if "keywords" in sections:
-        try:
-            pairs, _total = service.keywords(r, group_id, None, top_n)
-            lines.append(render.fmt_word_freq("🔑 高频关键词", pairs))
         except ServiceError:
             pass
     image_path = None

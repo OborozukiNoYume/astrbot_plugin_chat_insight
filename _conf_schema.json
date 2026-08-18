@@ -187,23 +187,20 @@
     "default": [
       "summary",
       "rank",
-      "keywords",
       "wordcloud"
     ],
     "options": [
       "summary",
       "rank",
-      "keywords",
       "wordcloud"
     ],
     "labels": [
       "总览",
       "发言榜",
-      "关键词",
       "词云"
     ],
     "render_type": "checkbox",
-    "hint": "勾选要包含的分节；词云生成图片，无文本时自动降级文字版"
+    "hint": "勾选要包含的分节；词云即关键词的可视化，生成图片，无文本时自动降级文字版"
   },
   "report_min_messages": {
     "description": "群报活跃度下限",
