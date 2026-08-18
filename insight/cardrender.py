@@ -12,14 +12,16 @@
 from __future__ import annotations
 
 import html
+import logging
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from astrbot.api import logger
-
 from .service import ServiceError
+
+# 与 AstrBot LogManager 同名 logger：宿主环境进统一日志，独立测试零依赖
+logger = logging.getLogger("astrbot")
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 

@@ -71,6 +71,7 @@ AstrBot → ChatLogger → chatlog.db → Chat Insight（本插件，只读）
 | `wordcloud_retention_days` | `7` | 词云 PNG 保留天数，生成时自动清理过期图，`0` 关闭 |
 | `exclude_waked_messages` | `true` | 群统计排除唤醒消息 |
 | `profile_scope` | `current_group` | 用户画像范围（`all` 为全部会话） |
+| `render_mode` | `text` | 画像与群报输出形式：`text` 文本 / `image` 图片卡片（覆盖 `/用户画像`、`/群画像`、定时群报），渲染失败自动回退文本 |
 | `cache_ttl_minutes` | `30` | 画像内存缓存分钟数，`0` 关闭 |
 | `report_enabled` | `false` | 定时群报开关（详见下方） |
 | `report_frequency` | `weekly` | 群报频率：每日（报昨日）/ 每周（报上周）/ 每月（报上月） |
@@ -84,6 +85,10 @@ AstrBot → ChatLogger → chatlog.db → Chat Insight（本插件，只读）
 ## 定时群报
 
 开启 `report_enabled` 并配置目标群后，插件按频率（每日/每周/每月）和设定时刻自动推送群报，**统计区间与频率联动**：每日报昨日、每周报上周（周一起始自然周）、每月报上月（自然月）。分节内容在 WebUI 勾选，词云以图片发送（无可用文本自动降级文字版）。配置改动保存后最迟约 5 分钟生效（无需重启）；数据源未就绪或配置非法时循环自动等待重试，不影响主进程。
+
+## 图片卡片（render_mode = image）
+
+`/用户画像`、`/群画像` 与定时群报可切换为 HTML 卡片图输出（模板在 `insight/templates/`，数据组装与文本版同源同口径）。渲染经 AstrBot 官方 t2i 服务（`Star.html_render`）——**模板与统计数据（昵称、QQ 号、群号等）需上传该服务**，介意隐私请保持 `text`。渲染服务过载/超时/返回异常内容时自动回退既有文本输出；词云不并入卡片，仍独立成图。
 
 ## 已知限制
 
