@@ -72,6 +72,18 @@ AstrBot → ChatLogger → chatlog.db → Chat Insight（本插件，只读）
 | `exclude_waked_messages` | `true` | 群统计排除唤醒消息 |
 | `profile_scope` | `current_group` | 用户画像范围（`all` 为全部会话） |
 | `cache_ttl_minutes` | `30` | 画像内存缓存分钟数，`0` 关闭 |
+| `report_enabled` | `false` | 定时群报开关（详见下方） |
+| `report_frequency` | `weekly` | 群报频率：每日（报昨日）/ 每周（报上周）/ 每月（报上月） |
+| `report_day` | `1` | 每周模式的星期（1=周一…7=周日） |
+| `report_day_of_month` | `1` | 每月模式的日期（1-31，超当月天数取月末） |
+| `report_time` | `08:00` | 群报触发时间 HH:MM |
+| `report_groups` | `[]` | 目标群号列表（纯数字），留空不推送 |
+| `report_sections` | 全选 | 播报内容复选：总览 / 发言榜 / 关键词 / 词云 |
+| `report_min_messages` | `10` | 区间消息数低于该值的群自动跳过，`0` 不限制 |
+
+## 定时群报
+
+开启 `report_enabled` 并配置目标群后，插件按频率（每日/每周/每月）和设定时刻自动推送群报，**统计区间与频率联动**：每日报昨日、每周报上周（周一起始自然周）、每月报上月（自然月）。分节内容在 WebUI 勾选，词云以图片发送（无可用文本自动降级文字版）。配置改动保存后最迟约 5 分钟生效（无需重启）；数据源未就绪或配置非法时循环自动等待重试，不影响主进程。
 
 ## 已知限制
 
@@ -90,7 +102,7 @@ AstrBot → ChatLogger → chatlog.db → Chat Insight（本插件，只读）
 ## 开发
 
 ```bash
-python -m pytest tests/ -q   # 98 个用例：契约/时区/口径/画像/缓存/坏JSON/边界
+python -m pytest tests/ -q   # 105 个用例：契约/时区/口径/画像/群报/缓存/坏JSON/边界
 ```
 
 包结构：`insight/`（纯 Python）：`db`（只读连接）· `timeutil`（唯一时间实现）· `textproc`（清洗/分词）· `repository`（全部 SQL）· `service`（业务聚合）· `render`（渲染与降级）· `colloquial`（口语触发匹配）· `cache`（画像 TTL 缓存）。

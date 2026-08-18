@@ -82,5 +82,59 @@
     "type": "int",
     "default": 30,
     "hint": "用户/群画像内存缓存的有效分钟数，0 关闭；重启后重算"
+  },
+  "report_enabled": {
+    "description": "启用定时群报",
+    "type": "bool",
+    "default": false,
+    "hint": "按下方设定的时间和频率自动向目标群推送群报；改动保存后最迟 5 分钟内生效"
+  },
+  "report_frequency": {
+    "description": "群报频率",
+    "type": "string",
+    "default": "weekly",
+    "options": ["daily", "weekly", "monthly"],
+    "labels": ["每日（报昨日）", "每周（报上周）", "每月（报上月）"]
+  },
+  "report_day": {
+    "description": "群报星期（每周模式）",
+    "type": "string",
+    "default": "1",
+    "options": ["1", "2", "3", "4", "5", "6", "7"],
+    "labels": ["周一", "周二", "周三", "周四", "周五", "周六", "周日"],
+    "hint": "仅「每周」频率生效"
+  },
+  "report_day_of_month": {
+    "description": "群报日期（每月模式）",
+    "type": "int",
+    "default": 1,
+    "hint": "仅「每月」频率生效，1-31；超出当月天数时取当月最后一天（如 31 在 2 月取 28/29）"
+  },
+  "report_time": {
+    "description": "群报时间",
+    "type": "string",
+    "default": "08:00",
+    "hint": "HH:MM 24 小时制，如 09:30"
+  },
+  "report_groups": {
+    "description": "群报目标群号",
+    "type": "list",
+    "default": [],
+    "hint": "群号列表（纯数字字符串）；留空则不推送"
+  },
+  "report_sections": {
+    "description": "群报播报内容",
+    "type": "list",
+    "default": ["summary", "rank", "keywords", "wordcloud"],
+    "options": ["summary", "rank", "keywords", "wordcloud"],
+    "labels": ["总览", "发言榜", "关键词", "词云"],
+    "render_type": "checkbox",
+    "hint": "勾选要包含的分节；词云生成图片，无文本时自动降级文字版"
+  },
+  "report_min_messages": {
+    "description": "群报活跃度下限",
+    "type": "int",
+    "default": 10,
+    "hint": "上周用户消息数低于该值的群自动跳过（防打扰），0 为不限制"
   }
 }

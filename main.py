@@ -18,15 +18,17 @@ from __future__ import annotations
 
 import asyncio
 import re
+from datetime import datetime
 from pathlib import Path
 
 from astrbot.api import AstrBotConfig, logger
 from astrbot.api.event import AstrMessageEvent, filter
 from astrbot.api.message_components import At
 from astrbot.api.star import Context, Star, register
+from astrbot.core.message.message_event_result import MessageChain
 from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 
-from .insight import colloquial, render
+from .insight import colloquial, render, report
 from .insight.cache import TTLCache
 from .insight.db import ChatlogDB, DatabaseNotAvailable, SchemaIncompatible
 from .insight.repository import ChatlogRepository
@@ -71,6 +73,7 @@ class ChatInsight(Star):
         self._wc_trigger_enabled = True
         self._profile_scope = "current_group"
         self.cache = TTLCache(0)
+        self._report_task: asyncio.Task | None = None
 
     async def initialize(self):
         """定位并校验 chatlog.db。失败不抛出：插件可加载，命令给出清晰提示。"""
@@ -123,8 +126,17 @@ class ChatInsight(Star):
         except Exception as e:
             self._init_error = f"初始化失败：{e}"
             logger.error(f"[insight] 初始化异常: {e}", exc_info=True)
+        # 群报调度循环：数据源未就绪也启动（循环内自行等待重试）
+        self._report_task = asyncio.create_task(self._report_loop())
 
     async def terminate(self):
+        if self._report_task is not None:
+            self._report_task.cancel()
+            try:
+                await self._report_task
+            except asyncio.CancelledError:
+                pass
+            self._report_task = None
         self.service = None
         self.cache.clear()
 
@@ -572,6 +584,111 @@ class ChatInsight(Star):
         n = self.cache.clear()
         await asyncio.to_thread(svc.repo.refresh_bot_ids)
         yield event.plain_result(f"🧹 已清空 {n} 条画像缓存，Bot ID 将重新识别")
+
+    # ---------- 定时群报（配置驱动，无命令入口） ----------
+
+    async def _report_loop(self):
+        """群报调度：分段睡向目标时刻，醒来已越线即触发（约 5 分钟粒度响应配置改动）。
+
+        到点判定必须用「等待中的目标」而非每次重算值——next_report_dt 对已过时刻
+        会顺延到下一周期，若醒来后重算再比大小，到点那一拍会被顺延吞掉永不触发。
+        中途重算仅在结果与当前目标不同时才切换（配置改了时刻/频率）。
+        """
+        while True:
+            try:
+                if not bool(self.config.get("report_enabled", False)):
+                    await asyncio.sleep(60)
+                    continue
+                try:
+                    svc = self._svc()
+                except _USER_ERRORS as e:
+                    logger.warning(f"[insight] 群报等待数据源就绪: {e}")
+                    await asyncio.sleep(600)
+                    continue
+
+                def _next_target() -> datetime:
+                    return report.next_report_dt(
+                        datetime.now(tz=svc.tz),
+                        str(self.config.get("report_frequency", "weekly") or "weekly"),
+                        int(self.config.get("report_day", "1") or 1),
+                        int(self.config.get("report_day_of_month", 1) or 1),
+                        str(self.config.get("report_time", "08:00") or "08:00"),
+                    )
+
+                try:
+                    target = _next_target()
+                except ValueError as e:
+                    logger.warning(f"[insight] 群报配置无效，10 分钟后重试: {e}")
+                    await asyncio.sleep(600)
+                    continue
+                logger.info(f"[insight] 下次群报: {target:%Y-%m-%d %H:%M %Z}")
+                while True:
+                    remain = (target - datetime.now(tz=svc.tz)).total_seconds()
+                    if remain <= 0:
+                        break
+                    await asyncio.sleep(min(remain, 300))
+                    # 醒来已到/过点：立即触发。必须先于重算——重算值对已过时刻
+                    # 会顺延到下一周期，先重算就会把到点这一拍换成明天而永不触发。
+                    if datetime.now(tz=svc.tz) >= target:
+                        break
+                    try:
+                        fresh = _next_target()
+                    except ValueError:
+                        continue  # 配置暂无效（可能编辑中）：沿用原目标
+                    if abs((fresh - target).total_seconds()) > 1:
+                        target = fresh
+                        logger.info(f"[insight] 群报时刻已调整: {target:%Y-%m-%d %H:%M %Z}")
+                await self._fire_reports()
+                await asyncio.sleep(300)
+            except asyncio.CancelledError:
+                raise
+            except Exception as e:
+                logger.error(f"[insight] 群报循环异常: {e}", exc_info=True)
+                await asyncio.sleep(300)
+
+    async def _fire_reports(self):
+        groups = [
+            str(g).strip()
+            for g in (self.config.get("report_groups", []) or [])
+            if str(g).strip()
+        ]
+        if not groups:
+            logger.info("[insight] 群报：未配置目标群，本次跳过")
+            return
+        configured = self.config.get("report_sections", list(report.SECTIONS)) or []
+        sections = [s for s in report.SECTIONS if s in configured]
+        min_msgs = int(self.config.get("report_min_messages", 10) or 0)
+        frequency = str(self.config.get("report_frequency", "weekly") or "weekly")
+        svc = self._svc()
+        for gid in groups:
+            try:
+                built = await asyncio.to_thread(
+                    report.build_report, svc, gid, sections, None, min_msgs, frequency
+                )
+            except _USER_ERRORS as e:
+                logger.warning(f"[insight] 群报 {gid} 生成失败: {e}")
+                continue
+            if built is None:
+                logger.info(f"[insight] 群报 {gid} 上周活跃度低于 {min_msgs}，跳过")
+                continue
+            title, text, image_path = built
+            ok = await self._push_group(gid, title, text, image_path)
+            logger.info(f"[insight] 群报 {gid} 推送{'成功' if ok else '失败'}")
+
+    async def _push_group(self, group_id: str, title: str, text: str, image_path) -> bool:
+        """向目标群推送。群号不含平台信息：依次尝试各平台实例构造会话。"""
+        chain = MessageChain()
+        if image_path:
+            chain.file_image(str(image_path))
+        chain.message(f"{title}\n{text}" if text else title)
+        for platform in self.context.platform_manager.platform_insts:
+            umo = f"{platform.meta().id}:GroupMessage:{group_id}"
+            try:
+                if await self.context.send_message(umo, chain):
+                    return True
+            except Exception as e:
+                logger.warning(f"[insight] 群报经 {umo} 推送异常: {e}")
+        return False
 
     def _wake_prefixes(self) -> list[str]:
         """AstrBot 配置的唤醒前缀列表（可多个、可变更，禁止硬编码）。
