@@ -19,6 +19,8 @@ from zoneinfo import ZoneInfo
 
 from astrbot.api import logger
 
+from .service import ServiceError
+
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 
 # 媒体类型 → (中文标签, 卡片用色)，与文本版 _MEDIA_LABELS 的措辞保持一致
@@ -52,6 +54,17 @@ def _ts(value: int | None, tz: ZoneInfo) -> str:
     if not value:
         return "-"
     return datetime.fromtimestamp(value, tz).strftime("%Y-%m-%d %H:%M")
+
+
+def _is_image_file(path: str) -> bool:
+    """渲染服务过载时会以 200 返回 "no available server" 文本，且框架的
+    download_image_by_url 不校验内容直接落盘——按魔数确认拿到的是真图片。"""
+    try:
+        with open(path, "rb") as f:
+            head = f.read(8)
+    except OSError:
+        return False
+    return head.startswith(b"\x89PNG") or head.startswith(b"\xff\xd8")
 
 
 def _name_pairs(pairs, limit: int = 8) -> list[dict]:
@@ -195,10 +208,184 @@ async def render_user_card(star, name: str, uid: str, p: dict, tz: ZoneInfo) -> 
         # png 保证小字号清晰（框架默认 jpeg q40 对文字过糊）
         path = await star.html_render(tmpl, data, return_url=False,
                                       options={"type": "png"})
-        if not path:
+        if not path or not _is_image_file(str(path)):
             return None
         logger.info(f"[insight] 用户画像卡片已渲染: {path}")
         return str(path)
     except Exception as e:
         logger.warning(f"[insight] 用户画像卡片渲染失败，回退文本: {e}")
+        return None
+
+
+# ---------- 群报卡片 ----------
+
+def build_report_card_data(service, group_id, sections, top_n=None,
+                           min_messages: int = 0, frequency: str = "weekly") -> dict | None:
+    """群报卡片数据（与 report.build_report 同口径取数）。
+
+    静默群（区间消息量低于 min_messages）返回 None；群无记录由
+    service.summary 抛 ServiceError（调用方记日志跳过），与文本路径一致。
+    rank/keywords 分节独立容错：无数据跳过该区块，不影响整张卡片。
+    """
+    from . import report as report_mod
+
+    r = service.resolve(report_mod.PERIOD_SPEC[frequency])
+    s = service.summary(r, group_id)
+    if s["messages"] < min_messages:
+        return None
+    group_name = service.repo.get_group_meta(str(group_id))[0]
+
+    entries: list = []
+    total = 0
+    if "rank" in sections:
+        try:
+            entries, total = service.rank(r, group_id, top_n)
+        except ServiceError:
+            entries, total = [], 0
+    rank_max = max((e.count for e in entries), default=0)
+
+    pairs = []
+    if "keywords" in sections:
+        try:
+            pairs, _ = service.keywords(r, group_id, None, top_n)
+        except ServiceError:
+            pairs = []
+    kw_max = pairs[0][1] if pairs else 1
+
+    return {
+        "group_name": _esc(group_name),
+        "group_id": str(group_id),
+        "period_label": report_mod.PERIOD_LABEL[frequency],
+        "range_label": s["range"].label,
+        "span": s["span"],
+        "generated_at": datetime.now(service.tz).strftime("%Y-%m-%d %H:%M"),
+        "stats": [
+            {"label": "消息", "value": f"{s['messages']:,}", "sub": ""},
+            {"label": "日均", "value": f"{s['avg_per_day']:.1f}", "sub": ""},
+            {"label": "活跃人数", "value": str(s["active_users"]), "sub": "发过至少 1 条"},
+            {"label": "峰值日", "value": str(s["peak_messages"]), "sub": s["peak_date"]},
+        ],
+        "days_with_data": f"{s['days_with_data']}/{s['span_days']} 天",
+        "rank_total": total,
+        "rank_rows": [
+            {
+                "i": i,
+                "name": _esc(e.user_name if e.user_name and e.user_name != e.user_id else e.user_id),
+                "count": e.count,
+                "pct": f"{e.ratio * 100:.1f}%" if total else "-",
+                "wpx": round(e.count / rank_max * 100) if rank_max else 0,
+            }
+            for i, e in enumerate(entries, 1)
+        ],
+        "keywords": [
+            {"word": _esc(w), "count": c,
+             "size": round(13 + (c / kw_max) * 7, 1), "hot": c == kw_max}
+            for w, c in pairs
+        ],
+    }
+
+
+async def render_report_card(star, data: dict) -> str | None:
+    """渲染群报卡片，失败返回 None（降级文本群报）。"""
+    try:
+        path = await star.html_render(
+            load_template("report_card"), data, return_url=False,
+            options={"type": "png"},
+        )
+        if not path or not _is_image_file(str(path)):
+            return None
+        logger.info(f"[insight] 群报卡片已渲染: {path}")
+        return str(path)
+    except Exception as e:
+        logger.warning(f"[insight] 群报卡片渲染失败，回退文本: {e}")
+        return None
+
+
+# ---------- 群画像卡片 ----------
+
+def build_group_card_data(group_id: str, p: dict, tz: ZoneInfo) -> dict:
+    """group_profile dict → 群画像卡片模板数据。"""
+    hour_max = max(p["hour_counts"]) or 1
+    hours = [
+        {
+            "h": h,
+            "count": c,
+            "hpx": round(c / hour_max * 54) + (2 if c else 0),
+            "peak": h in p["peak_hours"],
+            "tick": f"{h:02d}" if h % 3 == 0 else "",
+        }
+        for h, c in enumerate(p["hour_counts"])
+    ]
+    trend_max = max((c for _, c in p["daily_trend"]), default=0)
+    trend = [
+        {"date": d, "count": c, "hpx": round(c / trend_max * 54) + (2 if c else 0)}
+        for d, c in p["daily_trend"]
+    ]
+    act_max = max((c for _, c in p["top_active"]), default=0)
+    top_active = [
+        {"i": i, "name": _esc(n), "count": c,
+         "wpx": round(c / act_max * 100) if act_max else 0}
+        for i, (n, c) in enumerate(p["top_active"], 1)
+    ]
+    kw_max = p["top_keywords"][0][1] if p["top_keywords"] else 1
+    media = [
+        {
+            "label": _MEDIA_COLORS.get(k, (k, "#94a3b8"))[0],
+            "color": _MEDIA_COLORS.get(k, (k, "#94a3b8"))[1],
+            "pct": _pct(v),
+            "ratio": round(v, 4),
+        }
+        for k, v in sorted(p["media_ratios"].items(), key=lambda kv: -kv[1])
+        if v > 0
+    ]
+    span_days = max(
+        (p["last_seen"] - p["first_seen"]) // 86400 + 1
+        if p["first_seen"] and p["last_seen"] else 1,
+        1,
+    )
+    return {
+        "group_name": _esc(p["group_name"]),
+        "group_id": str(group_id),
+        "generated_at": datetime.now(tz).strftime("%Y-%m-%d %H:%M"),
+        "first_seen": _ts(p["first_seen"], tz),
+        "last_seen": _ts(p["last_seen"], tz),
+        "stats": [
+            {"label": "消息", "value": f"{p['message_count']:,}", "sub": "全期"},
+            {"label": "发言成员", "value": str(p["active_members"]),
+             "sub": "有发言者，非群成员总数"},
+            {"label": "跨度", "value": f"{span_days} 天", "sub": "有记录以来"},
+            {"label": "日均", "value": f"{p['message_count'] / span_days:.1f}", "sub": ""},
+        ],
+        "hours": hours,
+        "peak_hours": "/".join(f"{h:02d}" for h in p["peak_hours"]) or "-",
+        "trend_days": p["trend_days"],
+        "trend": trend,
+        "top_active": top_active,
+        "keywords": [
+            {"word": _esc(w), "count": c,
+             "size": round(13 + (c / kw_max) * 7, 1), "hot": c == kw_max}
+            for w, c in p["top_keywords"]
+        ],
+        "keyword_window_days": p["keyword_window_days"],
+        "media": media,
+        "top_pairs": [
+            {"a": _esc(a), "b": _esc(b), "count": c}
+            for a, b, c in p["top_pairs"][:5]
+        ],
+    }
+
+
+async def render_group_card(star, group_id: str, p: dict, tz: ZoneInfo) -> str | None:
+    """渲染群画像卡片，失败返回 None（降级文本）。"""
+    try:
+        path = await star.html_render(
+            load_template("group_profile"), build_group_card_data(group_id, p, tz),
+            return_url=False, options={"type": "png"},
+        )
+        if not path or not _is_image_file(str(path)):
+            return None
+        logger.info(f"[insight] 群画像卡片已渲染: {path}")
+        return str(path)
+    except Exception as e:
+        logger.warning(f"[insight] 群画像卡片渲染失败，回退文本: {e}")
         return None

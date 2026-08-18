@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+                 "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
+    background: #eef0f6; width: 720px; padding: 20px; color: #1f2329;
+  }
+  .card {
+    background: #fff; border-radius: 20px; overflow: hidden;
+    box-shadow: 0 10px 34px rgba(38, 48, 88, 0.10);
+  }
+  .header {
+    background: linear-gradient(135deg, #3b82f6 0%, #5063f0 55%, #8b5cf0 100%);
+    color: #fff; padding: 26px 28px 58px;
+  }
+  .hd-top { display: flex; align-items: center; gap: 16px; }
+  .avatar {
+    width: 62px; height: 62px; border-radius: 50%; flex: none;
+    background: rgba(255,255,255,0.18); border: 2px solid rgba(255,255,255,0.55);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 27px; font-weight: 600;
+  }
+  .hd-name { font-size: 24px; font-weight: 600; line-height: 1.25; word-break: break-all; }
+  .hd-uid {
+    font-size: 12.5px; opacity: 0.85; margin-top: 3px;
+    font-family: "SF Mono", Consolas, Menlo, monospace;
+  }
+  .hd-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .badge {
+    font-size: 12px; padding: 4px 12px; border-radius: 999px;
+    background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.30);
+  }
+  .hd-times {
+    font-size: 12px; opacity: 0.85; margin-top: 10px;
+    display: flex; flex-wrap: wrap; gap: 6px 18px;
+  }
+  .stats { display: flex; margin: -34px 16px 0; position: relative; }
+  .stat {
+    flex: 1; background: #fff; border-radius: 12px; padding: 12px 6px 10px;
+    text-align: center; box-shadow: 0 4px 16px rgba(38,48,88,0.10);
+  }
+  .stat + .stat { margin-left: 10px; }
+  .stat .v { font-size: 21px; font-weight: 700; color: #3747d4; }
+  .stat .l { font-size: 12px; color: #6b7280; margin-top: 2px; }
+  .stat .s { font-size: 10.5px; color: #9ca3af; margin-top: 1px; }
+  .section { padding: 20px 24px 4px; }
+  .sec-title {
+    display: flex; align-items: center; font-size: 15px; font-weight: 600;
+    margin-bottom: 14px;
+  }
+  .sec-title::before {
+    content: ""; width: 4px; height: 15px; border-radius: 2px;
+    background: linear-gradient(#3b82f6, #8b5cf0); margin-right: 8px;
+  }
+  .sec-title .hint { font-size: 11px; color: #9ca3af; font-weight: 400; margin-left: 8px; }
+  .chart-box { background: #f7f8fc; border-radius: 12px; padding: 14px 14px 10px; }
+  .chart-cap { font-size: 11.5px; color: #6b7280; margin-bottom: 8px; }
+  .chart-cap b { color: #3747d4; font-weight: 600; }
+  .cols { display: flex; align-items: flex-end; gap: 3px; height: 78px; }
+  .col { flex: 1; display: flex; flex-direction: column; align-items: center;
+         justify-content: flex-end; height: 100%; }
+  .bar { width: 100%; border-radius: 3px 3px 1px 1px; background: #c3cdf7; }
+  .col.peak .bar { background: linear-gradient(#5063f0, #7c5cf0); }
+  .ticks { display: flex; gap: 3px; margin-top: 4px; }
+  .ticks span { flex: 1; text-align: center; font-size: 9px; color: #b0b7c8;
+                font-family: "SF Mono", Consolas, monospace; }
+  .trend-cap { display: flex; justify-content: space-between; font-size: 10px;
+               color: #b0b7c8; margin-top: 4px;
+               font-family: "SF Mono", Consolas, monospace; }
+  .pill-row { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: baseline; }
+  .kw {
+    background: #eef0fb; color: #3b48b8; border-radius: 999px; padding: 3px 11px;
+    line-height: 1.45;
+  }
+  .kw.hot { background: linear-gradient(135deg,#5063f0,#8b5cf0); color: #fff; }
+  .rrow { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+  .medal {
+    width: 22px; height: 22px; border-radius: 50%; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; color: #fff; background: #b9c2d0;
+  }
+  .medal.m1 { background: linear-gradient(135deg,#f59e0b,#f97316); }
+  .medal.m2 { background: linear-gradient(135deg,#94a3b8,#64748b); }
+  .medal.m3 { background: linear-gradient(135deg,#d97706,#b45309); }
+  .rname { width: 118px; flex: none; font-size: 13.5px; overflow: hidden;
+           text-overflow: ellipsis; white-space: nowrap; }
+  .rbar { flex: 1; height: 10px; border-radius: 5px; background: #eef0f6; overflow: hidden; }
+  .rbar span { display: block; height: 100%; border-radius: 5px;
+               background: linear-gradient(90deg,#5063f0,#8b5cf0); }
+  .rcount { width: 64px; flex: none; text-align: right; font-size: 13px; font-weight: 600; }
+  .media-bar { display: flex; height: 14px; border-radius: 7px; overflow: hidden;
+               background: #eef0f6; }
+  .media-bar span { height: 100%; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 9px; }
+  .legend .it { font-size: 12px; color: #4b5563; display: flex; align-items: center; }
+  .legend .dot { width: 9px; height: 9px; border-radius: 3px; margin-right: 5px;
+                 display: inline-block; }
+  .srow { display: flex; padding: 7px 0; border-bottom: 1px dashed #eceef5;
+          font-size: 13px; align-items: baseline; }
+  .srow:last-child { border-bottom: none; }
+  .srow .v { color: #1f2329; flex: 1; word-break: break-all; }
+  .srow .c { color: #3747d4; font-weight: 600;
+             font-family: "SF Mono", Consolas, monospace; font-size: 12px; }
+  .arrow { color: #b0b7c8; margin: 0 4px; }
+  .empty { font-size: 12.5px; color: #9ca3af; padding: 4px 0; }
+  .footer {
+    margin-top: 20px; padding: 14px 24px 16px; border-top: 1px solid #eef0f6;
+    display: flex; justify-content: space-between; font-size: 11px; color: #b0b7c8;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+
+  <div class="header">
+    <div class="hd-top">
+      <div class="avatar">{{ group_name | safe }}</div>
+      <div>
+        <div class="hd-name">{{ group_name | safe }}</div>
+        <div class="hd-uid">群 {{ group_id }}</div>
+      </div>
+    </div>
+    <div class="hd-badges">
+      <span class="badge">群画像 · 全期概况</span>
+    </div>
+    <div class="hd-times">
+      <span>首条记录 {{ first_seen }}</span>
+      <span>最近记录 {{ last_seen }}</span>
+    </div>
+  </div>
+
+  <div class="stats">
+    {% for s in stats %}
+    <div class="stat">
+      <div class="v">{{ s.value }}</div>
+      <div class="l">{{ s.label }}</div>
+      {% if s.sub %}<div class="s">{{ s.sub }}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="section">
+    <div class="sec-title">活跃分布
+      <span class="hint">近 {{ trend_days }} 天 · 高峰 {{ peak_hours }} 时</span>
+    </div>
+    <div class="chart-box">
+      <div class="chart-cap">24 小时分布（条）</div>
+      <div class="cols">
+        {% for h in hours %}
+        <div class="col{% if h.peak %} peak{% endif %}">
+          <div class="bar" style="height: {{ h.hpx }}px"></div>
+        </div>
+        {% endfor %}
+      </div>
+      <div class="ticks">
+        {% for h in hours %}<span>{{ h.tick }}</span>{% endfor %}
+      </div>
+    </div>
+    {% if trend %}
+    <div class="chart-box" style="margin-top: 10px;">
+      <div class="chart-cap">日趋势（近 {{ trend_days }} 天，条）</div>
+      <div class="cols">
+        {% for d in trend %}
+        <div class="col"><div class="bar" style="height: {{ d.hpx }}px; background: #aebdf8;"></div></div>
+        {% endfor %}
+      </div>
+      <div class="trend-cap"><span>{{ trend[0].date }}</span><span>{{ trend[-1].date }}</span></div>
+    </div>
+    {% endif %}
+  </div>
+
+  {% if keywords %}
+  <div class="section">
+    <div class="sec-title">群关键词<span class="hint">近 {{ keyword_window_days }} 天 · 仅自然讨论</span></div>
+    <div class="pill-row">
+      {% for k in keywords %}
+      <span class="kw{% if k.hot %} hot{% endif %}" style="font-size: {{ k.size }}px">{{ k.word | safe }} ×{{ k.count }}</span>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if top_active %}
+  <div class="section">
+    <div class="sec-title">发言榜<span class="hint">近 {{ trend_days }} 天</span></div>
+    {% for r in top_active %}
+    <div class="rrow">
+      <div class="medal {% if r.i == 1 %}m1{% elif r.i == 2 %}m2{% elif r.i == 3 %}m3{% endif %}">{{ r.i }}</div>
+      <div class="rname">{{ r.name | safe }}</div>
+      <div class="rbar"><span style="width: {{ r.wpx }}%"></span></div>
+      <div class="rcount">{{ r.count }} 条</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if media %}
+  <div class="section">
+    <div class="sec-title">媒体构成<span class="hint">近 {{ trend_days }} 天 · 占全部消息</span></div>
+    <div class="media-bar">
+      {% for m in media %}<span style="width: {{ m.pct }}; background: {{ m.color }};"></span>{% endfor %}
+    </div>
+    <div class="legend">
+      {% for m in media %}
+      <span class="it"><span class="dot" style="background: {{ m.color }};"></span>{{ m.label }} {{ m.pct }}</span>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  {% if top_pairs %}
+  <div class="section">
+    <div class="sec-title">高频互动对<span class="hint">近 {{ trend_days }} 天 · 回复关系</span></div>
+    {% for p in top_pairs %}
+    <div class="srow">
+      <div class="v">{{ p.a | safe }}<span class="arrow">→</span>{{ p.b | safe }}</div>
+      <div class="c">×{{ p.count }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  <div class="footer">
+    <span>Chat Insight · 基于 ChatLogger 只读统计</span>
+    <span>生成于 {{ generated_at }}</span>
+  </div>
+
+</div>
+</body>
+</html>

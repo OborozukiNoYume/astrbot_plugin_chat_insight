@@ -554,6 +554,11 @@ class ChatInsight(Star):
                 yield event.plain_result("⛔ 该命令仅在群聊中可用")
                 return
             p = await self._build_user("group", "group_profile", str(gid))
+            if self._render_mode == "image":
+                image = await cardrender.render_group_card(self, str(gid), p, svc.tz)
+                if image:
+                    yield event.image_result(image)
+                    return
             yield event.plain_result(render.fmt_group_profile(p, svc.tz))
         except _USER_ERRORS as e:
             yield event.plain_result(f"⚠️ {e}")
@@ -679,6 +684,33 @@ class ChatInsight(Star):
         svc = self._svc()
         for gid in groups:
             try:
+                if self._render_mode == "image":
+                    # 卡片路径独立取数（与 build_report 同口径）；渲染失败落回文本
+                    data = await asyncio.to_thread(
+                        cardrender.build_report_card_data, svc, gid, sections,
+                        None, min_msgs, frequency,
+                    )
+                    if data is None:
+                        logger.info(f"[insight] 群报 {gid} 上周活跃度低于 {min_msgs}，跳过")
+                        continue
+                    card = await cardrender.render_report_card(self, data)
+                    if card:
+                        images = [card]
+                        if "wordcloud" in sections:
+                            try:
+                                wc = await asyncio.to_thread(
+                                    svc.wordcloud, svc.resolve(report.PERIOD_SPEC[frequency]),
+                                    gid, None, None,
+                                )
+                                if wc[0]:
+                                    images.append(str(wc[0]))
+                            except _USER_ERRORS:
+                                pass  # 词云缺失不阻断群报
+                        title = f"{data['period_label']}群报 · {data['group_name']}"
+                        ok = await self._push_group(gid, title, "", *images)
+                        logger.info(f"[insight] 群报 {gid} 推送{'成功' if ok else '失败'}（卡片）")
+                        continue
+                    logger.warning(f"[insight] 群报 {gid} 卡片渲染失败，本次回退文本")
                 built = await asyncio.to_thread(
                     report.build_report, svc, gid, sections, None, min_msgs, frequency
                 )
@@ -692,11 +724,12 @@ class ChatInsight(Star):
             ok = await self._push_group(gid, title, text, image_path)
             logger.info(f"[insight] 群报 {gid} 推送{'成功' if ok else '失败'}")
 
-    async def _push_group(self, group_id: str, title: str, text: str, image_path) -> bool:
+    async def _push_group(self, group_id: str, title: str, text: str, *image_paths) -> bool:
         """向目标群推送。群号不含平台信息：依次尝试各平台实例构造会话。"""
         chain = MessageChain()
-        if image_path:
-            chain.file_image(str(image_path))
+        for p in image_paths:
+            if p:
+                chain.file_image(str(p))
         chain.message(f"{title}\n{text}" if text else title)
         for platform in self.context.platform_manager.platform_insts:
             umo = f"{platform.meta().id}:GroupMessage:{group_id}"

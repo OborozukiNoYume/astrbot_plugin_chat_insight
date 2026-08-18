@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+                 "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
+    background: #eef0f6; width: 720px; padding: 20px; color: #1f2329;
+  }
+  .card {
+    background: #fff; border-radius: 20px; overflow: hidden;
+    box-shadow: 0 10px 34px rgba(38, 48, 88, 0.10);
+  }
+  .header {
+    background: linear-gradient(135deg, #1f8a8a 0%, #2fa39b 55%, #4fc3a1 100%);
+    color: #fff; padding: 26px 28px 58px;
+  }
+  .hd-top { display: flex; align-items: center; gap: 16px; }
+  .avatar {
+    width: 62px; height: 62px; border-radius: 50%; flex: none;
+    background: rgba(255,255,255,0.18); border: 2px solid rgba(255,255,255,0.55);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 27px; font-weight: 600;
+  }
+  .hd-name { font-size: 24px; font-weight: 600; line-height: 1.25; word-break: break-all; }
+  .hd-uid {
+    font-size: 12.5px; opacity: 0.85; margin-top: 3px;
+    font-family: "SF Mono", Consolas, Menlo, monospace;
+  }
+  .hd-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .badge {
+    font-size: 12px; padding: 4px 12px; border-radius: 999px;
+    background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.30);
+  }
+  .hd-times { font-size: 12px; opacity: 0.85; margin-top: 10px; }
+  .stats { display: flex; margin: -34px 16px 0; position: relative; }
+  .stat {
+    flex: 1; background: #fff; border-radius: 12px; padding: 12px 6px 10px;
+    text-align: center; box-shadow: 0 4px 16px rgba(38,48,88,0.10);
+  }
+  .stat + .stat { margin-left: 10px; }
+  .stat .v { font-size: 21px; font-weight: 700; color: #0f766e; }
+  .stat .l { font-size: 12px; color: #6b7280; margin-top: 2px; }
+  .stat .s { font-size: 10.5px; color: #9ca3af; margin-top: 1px; }
+  .section { padding: 20px 24px 4px; }
+  .sec-title {
+    display: flex; align-items: center; font-size: 15px; font-weight: 600;
+    margin-bottom: 14px;
+  }
+  .sec-title::before {
+    content: ""; width: 4px; height: 15px; border-radius: 2px;
+    background: linear-gradient(#1f8a8a, #4fc3a1); margin-right: 8px;
+  }
+  .sec-title .hint { font-size: 11px; color: #9ca3af; font-weight: 400; margin-left: 8px; }
+  .overview-line {
+    font-size: 12.5px; color: #6b7280; padding: 8px 12px;
+    background: #f4f9f8; border-radius: 8px;
+  }
+  .overview-line b { color: #0f766e; }
+  .rrow { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
+  .medal {
+    width: 22px; height: 22px; border-radius: 50%; flex: none;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 12px; font-weight: 700; color: #fff; background: #b9c2d0;
+  }
+  .medal.m1 { background: linear-gradient(135deg,#f59e0b,#f97316); }
+  .medal.m2 { background: linear-gradient(135deg,#94a3b8,#64748b); }
+  .medal.m3 { background: linear-gradient(135deg,#d97706,#b45309); }
+  .rname { width: 118px; flex: none; font-size: 13.5px; overflow: hidden;
+           text-overflow: ellipsis; white-space: nowrap; }
+  .rbar { flex: 1; height: 10px; border-radius: 5px; background: #eef0f6; overflow: hidden; }
+  .rbar span { display: block; height: 100%; border-radius: 5px;
+               background: linear-gradient(90deg,#2fa39b,#4fc3a1); }
+  .rcount { width: 64px; flex: none; text-align: right; font-size: 13px; font-weight: 600; }
+  .rpct { width: 52px; flex: none; text-align: right; font-size: 11.5px; color: #9ca3af; }
+  .pill-row { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: baseline; }
+  .kw {
+    background: #e9f5f2; color: #0f766e; border-radius: 999px; padding: 3px 11px;
+    line-height: 1.45;
+  }
+  .kw.hot { background: linear-gradient(135deg,#1f8a8a,#4fc3a1); color: #fff; }
+  .empty { font-size: 12.5px; color: #9ca3af; padding: 4px 0; }
+  .footer {
+    margin-top: 20px; padding: 14px 24px 16px; border-top: 1px solid #eef0f6;
+    display: flex; justify-content: space-between; font-size: 11px; color: #b0b7c8;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+
+  <div class="header">
+    <div class="hd-top">
+      <div class="avatar">{{ group_name | safe }}</div>
+      <div>
+        <div class="hd-name">{{ group_name | safe }}</div>
+        <div class="hd-uid">群 {{ group_id }}</div>
+      </div>
+    </div>
+    <div class="hd-badges">
+      <span class="badge">{{ period_label }}群报</span>
+      <span class="badge">{{ range_label }} · {{ span }}</span>
+    </div>
+    <div class="hd-times">统计区间 {{ span }}</div>
+  </div>
+
+  <div class="stats">
+    {% for s in stats %}
+    <div class="stat">
+      <div class="v">{{ s.value }}</div>
+      <div class="l">{{ s.label }}</div>
+      {% if s.sub %}<div class="s">{{ s.sub }}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if days_with_data %}
+  <div class="section">
+    <div class="overview-line">区间内有记录 <b>{{ days_with_data }}</b>；峰值日 <b>{{ stats[3].s }}</b> 达 <b>{{ stats[3].value }}</b> 条</div>
+  </div>
+  {% endif %}
+
+  {% if rank_rows %}
+  <div class="section">
+    <div class="sec-title">发言榜<span class="hint">共 {{ rank_total }} 条消息</span></div>
+    {% for r in rank_rows %}
+    <div class="rrow">
+      <div class="medal {% if r.i == 1 %}m1{% elif r.i == 2 %}m2{% elif r.i == 3 %}m3{% endif %}">{{ r.i }}</div>
+      <div class="rname">{{ r.name | safe }}</div>
+      <div class="rbar"><span style="width: {{ r.wpx }}%"></span></div>
+      <div class="rcount">{{ r.count }} 条</div>
+      <div class="rpct">{{ r.pct }}</div>
+    </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+
+  {% if keywords %}
+  <div class="section">
+    <div class="sec-title">高频关键词</div>
+    <div class="pill-row">
+      {% for k in keywords %}
+      <span class="kw{% if k.hot %} hot{% endif %}" style="font-size: {{ k.size }}px">{{ k.word | safe }} ×{{ k.count }}</span>
+      {% endfor %}
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="footer">
+    <span>Chat Insight · 基于 ChatLogger 只读统计</span>
+    <span>生成于 {{ generated_at }}</span>
+  </div>
+
+</div>
+</body>
+</html>

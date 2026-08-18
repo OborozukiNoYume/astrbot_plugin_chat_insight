@@ -144,12 +144,14 @@ class _FakeStar:
         return self.result
 
 
-def test_render_user_card_returns_path(user_full):
-    star = _FakeStar(result="/tmp/x.png")
+def test_render_user_card_returns_path(user_full, tmp_path):
+    real_png = tmp_path / "card.png"
+    real_png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 32)  # 魔数校验需真图片头
+    star = _FakeStar(result=str(real_png))
     path = asyncio.run(
         cardrender.render_user_card(star, "三哥", U1, user_full, TZ)
     )
-    assert path == "/tmp/x.png"
+    assert path == str(real_png)
     tmpl, data, return_url, options = star.calls[0]
     assert "讨论关键词" in tmpl  # 模板本体被上传
     assert data["uid"] == U1
@@ -165,3 +167,104 @@ def test_render_user_card_falls_back_on_error(user_full):
     assert asyncio.run(
         cardrender.render_user_card(_FakeStar(result=""), "三哥", U1, user_full, TZ)
     ) is None  # 空路径同样视为失败
+
+
+# ---------- 渲染服务"假图片"响应：错误文本落盘不抛异常 ----------
+
+def test_is_image_file(tmp_path):
+    png = tmp_path / "ok.png"
+    png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 32)
+    jpg = tmp_path / "ok.jpg"
+    jpg.write_bytes(b"\xff\xd8\xff\xe0" + b"0" * 32)
+    txt = tmp_path / "err.png"
+    txt.write_text("no available server\n")
+    assert cardrender._is_image_file(str(png))
+    assert cardrender._is_image_file(str(jpg))
+    assert not cardrender._is_image_file(str(txt))
+    assert not cardrender._is_image_file(str(tmp_path / "absent.png"))
+
+
+def test_render_rejects_non_image_response(user_full):
+    # 渲染服务过载返回 200+文本时框架不抛异常，必须按魔数识别并降级
+    bad = _FakeStar(result="/tmp/not_exist.png")  # 文件不存在
+    assert asyncio.run(
+        cardrender.render_user_card(bad, "三哥", U1, user_full, TZ)
+    ) is None
+
+
+# ---------- 群报卡片 ----------
+
+ALL_SECTIONS = ("summary", "rank", "keywords", "wordcloud")
+
+
+def test_build_report_card_data(service):
+    data = cardrender.build_report_card_data(
+        service, G1, ALL_SECTIONS, None, 0, "daily"
+    )
+    assert data["group_name"] == "测试群一"
+    assert data["period_label"] == "昨日"
+    # 发言榜：u1 三哥榜首，条形宽度最大
+    assert data["rank_rows"][0]["name"] == "三哥"
+    assert data["rank_rows"][0]["wpx"] == 100
+    assert data["rank_rows"][0]["pct"].endswith("%")
+    assert data["keywords"] and data["keywords"][0]["hot"] is True
+
+
+def test_build_report_card_data_skips_ranks_section(service):
+    data = cardrender.build_report_card_data(
+        service, G1, ("summary",), None, 0, "daily"
+    )
+    assert data["rank_rows"] == [] and data["keywords"] == []
+
+
+def test_build_report_card_data_silent_group(service):
+    assert cardrender.build_report_card_data(
+        service, G1, ALL_SECTIONS, None, min_messages=10_000, frequency="daily"
+    ) is None
+
+
+def test_report_card_template_renders_locally(service):
+    data = cardrender.build_report_card_data(
+        service, G1, ALL_SECTIONS, None, 0, "daily"
+    )
+    html = Environment(autoescape=False).from_string(
+        cardrender.load_template("report_card")
+    ).render(data)
+    assert "发言榜" in html and "高频关键词" in html and "三哥" in html
+
+
+def test_render_report_card_paths(service):
+    data = cardrender.build_report_card_data(
+        service, G1, ALL_SECTIONS, None, 0, "daily"
+    )
+    assert asyncio.run(cardrender.render_report_card(_FakeStar(result="x"), data)) is None
+
+
+# ---------- 群画像卡片 ----------
+
+def test_build_group_card_data(service):
+    p = service.group_profile(G1)
+    data = cardrender.build_group_card_data(G1, p, TZ)
+    assert data["group_name"] == "测试群一"
+    assert data["stats"][0]["value"] == f"{p['message_count']:,}"
+    assert len(data["hours"]) == 24
+    # 榜首条形满宽；互动对结构完整
+    assert data["top_active"][0]["wpx"] == 100
+    assert all({"a", "b", "count"} <= set(pair) for pair in data["top_pairs"])
+
+
+def test_group_card_template_renders_locally(service):
+    p = service.group_profile(G1)
+    data = cardrender.build_group_card_data(G1, p, TZ)
+    html = Environment(autoescape=False).from_string(
+        cardrender.load_template("group_profile")
+    ).render(data)
+    for block in ("活跃分布", "日趋势", "群关键词", "发言榜", "媒体构成", "高频互动对"):
+        assert block in html
+
+
+def test_render_group_card_paths(service):
+    p = service.group_profile(G1)
+    assert asyncio.run(
+        cardrender.render_group_card(_FakeStar(result="x"), G1, p, TZ)
+    ) is None
