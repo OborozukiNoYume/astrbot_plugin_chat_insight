@@ -28,7 +28,7 @@ from astrbot.api.star import Context, Star, register
 from astrbot.core.message.message_event_result import MessageChain
 from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 
-from .insight import colloquial, render, report
+from .insight import cardrender, colloquial, render, report
 from .insight.cache import TTLCache
 from .insight.db import ChatlogDB, DatabaseNotAvailable, SchemaIncompatible
 from .insight.repository import ChatlogRepository
@@ -72,6 +72,7 @@ class ChatInsight(Star):
         self._init_error: str | None = None
         self._wc_trigger_enabled = True
         self._profile_scope = "current_group"
+        self._render_mode = "text"
         self.cache = TTLCache(0)
         self._report_task: asyncio.Task | None = None
 
@@ -115,6 +116,7 @@ class ChatInsight(Star):
             )
             self._wc_trigger_enabled = bool(self.config.get("wordcloud_trigger_enabled", True))
             self._profile_scope = str(self.config.get("profile_scope", "current_group"))
+            self._render_mode = str(self.config.get("render_mode", "text") or "text")
             self.cache = TTLCache(
                 int(self.config.get("cache_ttl_minutes", 30) or 0) * 60
             )
@@ -249,7 +251,7 @@ class ChatInsight(Star):
         return None
 
     def _parse_user_tokens(self, event: AstrMessageEvent, tokens: list[str]):
-        """用户画像参数解析：[@目标已由 At 段处理] user <id|me> / 时间。
+        """用户画像参数解析：user <id|me> / 时间 / At 渲染文本。
         返回 (user_id 显式值或 None, time_spec)。"""
         user_id = None
         time_spec = None
@@ -265,10 +267,15 @@ class ChatInsight(Star):
                 time_spec = t
                 i += 1
             else:
-                raise ServiceError(
-                    f"无法识别的参数「{t}」。支持：用户 <QQ号|我>（或 user me）、"
-                    "时间（今日/本周/本月/今年/历史/N天）。"
-                )
+                m = colloquial.AT_RENDER_RE.match(t)
+                if m:  # At 段被平台渲染成 "@名字(QQ号)" 混入参数：提取 QQ 号为目标
+                    user_id = m.group(1)
+                    i += 1
+                else:
+                    raise ServiceError(
+                        f"无法识别的参数「{t}」。支持：@某人、用户 <QQ号|我>"
+                        "（或 user me）、时间（今日/本周/本月/今年/历史/N天）。"
+                    )
         return user_id, time_spec
 
     async def _prepare_user(self, event: AstrMessageEvent, tokens: list[str]):
@@ -505,6 +512,11 @@ class ChatInsight(Star):
             uid, gid, r = ctx
             p = await self._build_user("full", "user_full", r, uid, gid)
             name = await asyncio.to_thread(svc.repo.get_display_name, uid, gid)
+            if self._render_mode == "image":
+                image = await cardrender.render_user_card(self, name, uid, p, svc.tz)
+                if image:
+                    yield event.image_result(image)
+                    return  # 渲染失败时 render_user_card 返回 None，落回文本
             yield event.plain_result(render.fmt_user_full(name, p, svc.tz))
         except _USER_ERRORS as e:
             yield event.plain_result(f"⚠️ {e}")

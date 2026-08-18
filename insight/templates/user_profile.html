@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei",
+                 "Noto Sans CJK SC", "Source Han Sans SC", sans-serif;
+    background: #eef0f6; width: 720px; padding: 20px; color: #1f2329;
+  }
+  .card {
+    background: #fff; border-radius: 20px; overflow: hidden;
+    box-shadow: 0 10px 34px rgba(38, 48, 88, 0.10);
+  }
+  .header {
+    background: linear-gradient(135deg, #5063f0 0%, #8b5cf0 60%, #a855f7 100%);
+    color: #fff; padding: 26px 28px 58px;
+  }
+  .hd-top { display: flex; align-items: center; gap: 16px; }
+  .avatar {
+    width: 62px; height: 62px; border-radius: 50%; flex: none;
+    background: rgba(255,255,255,0.18); border: 2px solid rgba(255,255,255,0.55);
+    display: flex; align-items: center; justify-content: center;
+    font-size: 27px; font-weight: 600;
+  }
+  .hd-name { font-size: 24px; font-weight: 600; line-height: 1.25; word-break: break-all; }
+  .hd-uid {
+    font-size: 12.5px; opacity: 0.85; margin-top: 3px;
+    font-family: "SF Mono", Consolas, Menlo, monospace;
+  }
+  .hd-badges { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 14px; }
+  .badge {
+    font-size: 12px; padding: 4px 12px; border-radius: 999px;
+    background: rgba(255,255,255,0.16); border: 1px solid rgba(255,255,255,0.30);
+  }
+  .hd-times {
+    font-size: 12px; opacity: 0.85; margin-top: 10px;
+    display: flex; flex-wrap: wrap; gap: 6px 18px;
+  }
+  .stats {
+    display: flex; margin: -34px 16px 0; position: relative;
+  }
+  .stat {
+    flex: 1; background: #fff; border-radius: 12px; padding: 12px 6px 10px;
+    text-align: center; box-shadow: 0 4px 16px rgba(38,48,88,0.10);
+  }
+  .stat + .stat { margin-left: 10px; }
+  .stat .v { font-size: 21px; font-weight: 700; color: #3747d4; }
+  .stat .l { font-size: 12px; color: #6b7280; margin-top: 2px; }
+  .stat .s { font-size: 10.5px; color: #9ca3af; margin-top: 1px; }
+  .section { padding: 20px 24px 4px; }
+  .sec-title {
+    display: flex; align-items: center; font-size: 15px; font-weight: 600;
+    margin-bottom: 14px;
+  }
+  .sec-title::before {
+    content: ""; width: 4px; height: 15px; border-radius: 2px;
+    background: linear-gradient(#5063f0, #a855f7); margin-right: 8px;
+  }
+  .sec-title .hint { font-size: 11px; color: #9ca3af; font-weight: 400; margin-left: 8px; }
+  .charts { display: flex; gap: 14px; align-items: stretch; }
+  .chart-box {
+    background: #f7f8fc; border-radius: 12px; padding: 14px 14px 10px;
+  }
+  .chart-main { flex: 1; }
+  .chart-week { width: 172px; flex: none; }
+  .chart-cap { font-size: 11.5px; color: #6b7280; margin-bottom: 8px; }
+  .chart-cap b { color: #3747d4; font-weight: 600; }
+  .cols { display: flex; align-items: flex-end; gap: 3px; height: 78px; }
+  .col { flex: 1; display: flex; flex-direction: column; align-items: center;
+         justify-content: flex-end; height: 100%; }
+  .bar { width: 100%; border-radius: 3px 3px 1px 1px; background: #c3cdf7; }
+  .col.peak .bar { background: linear-gradient(#5063f0, #7c5cf0); }
+  .ticks { display: flex; gap: 3px; margin-top: 4px; }
+  .ticks span { flex: 1; text-align: center; font-size: 9px; color: #b0b7c8;
+                font-family: "SF Mono", Consolas, monospace; }
+  .cols.week { gap: 6px; }
+  .cols.week .bar { background: #d9c8f5; }
+  .cols.week .col.hot .bar { background: linear-gradient(#8b5cf0, #a855f7); }
+  .pill-row { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: baseline; }
+  .kw {
+    background: #eef0fb; color: #3b48b8; border-radius: 999px; padding: 3px 11px;
+    line-height: 1.45;
+  }
+  .kw.hot { background: linear-gradient(135deg,#5063f0,#8b5cf0); color: #fff; }
+  .grid { display: flex; flex-wrap: wrap; gap: 8px; }
+  .cell {
+    width: calc((100% - 24px) / 3); background: #f7f8fc; border-radius: 10px;
+    padding: 10px 12px 9px;
+  }
+  .cell.half { width: calc((100% - 8px) / 2); }
+  .cell .l { font-size: 11.5px; color: #6b7280; }
+  .cell .v { font-size: 17px; font-weight: 700; margin-top: 3px; color: #1f2329; }
+  .cell .s { font-size: 10.5px; color: #9ca3af; margin-top: 2px; }
+  .burst-line {
+    font-size: 12px; color: #6b7280; margin-top: 8px; padding: 8px 12px;
+    background: #f7f8fc; border-radius: 8px;
+  }
+  .media-bar { display: flex; height: 14px; border-radius: 7px; overflow: hidden;
+               background: #eef0f6; }
+  .media-bar span { height: 100%; }
+  .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; margin-top: 9px; }
+  .legend .it { font-size: 12px; color: #4b5563; display: flex; align-items: center; }
+  .legend .dot { width: 9px; height: 9px; border-radius: 3px; margin-right: 5px;
+                 display: inline-block; }
+  .srow { display: flex; padding: 7px 0; border-bottom: 1px dashed #eceef5;
+          font-size: 13px; align-items: baseline; }
+  .srow:last-child { border-bottom: none; }
+  .srow .k { width: 132px; flex: none; color: #6b7280; font-size: 12.5px; }
+  .srow .v { color: #1f2329; flex: 1; word-break: break-all; }
+  .srow .c { color: #3747d4; font-weight: 600; margin-left: 5px;
+             font-family: "SF Mono", Consolas, monospace; font-size: 12px; }
+  .empty { font-size: 12.5px; color: #9ca3af; padding: 4px 0; }
+  .bot-grid { display: flex; flex-wrap: wrap; gap: 8px; }
+  .footer {
+    margin-top: 20px; padding: 14px 24px 16px; border-top: 1px solid #eef0f6;
+    display: flex; justify-content: space-between; font-size: 11px; color: #b0b7c8;
+  }
+</style>
+</head>
+<body>
+<div class="card">
+
+  <div class="header">
+    <div class="hd-top">
+      <div class="avatar">{{ name | safe }}</div>
+      <div>
+        <div class="hd-name">{{ name | safe }}</div>
+        <div class="hd-uid">QQ {{ uid }}</div>
+      </div>
+    </div>
+    <div class="hd-badges">
+      <span class="badge">{{ scope }}</span>
+      <span class="badge">{{ range_label }} · {{ span }}</span>
+    </div>
+    <div class="hd-times">
+      <span>首次发言 {{ first_seen }}</span>
+      <span>最近发言 {{ last_seen }}</span>
+    </div>
+  </div>
+
+  <div class="stats">
+    {% for s in stats %}
+    <div class="stat">
+      <div class="v">{{ s.value }}</div>
+      <div class="l">{{ s.label }}</div>
+      {% if s.sub %}<div class="s">{{ s.sub }}</div>{% endif %}
+    </div>
+    {% endfor %}
+  </div>
+
+  <div class="section">
+    <div class="sec-title">活跃规律
+      <span class="hint">高峰 {{ peak_hours }} 时（合计占 {{ peak_ratio }}）</span>
+    </div>
+    <div class="charts">
+      <div class="chart-box chart-main">
+        <div class="chart-cap">24 小时分布（条）</div>
+        <div class="cols">
+          {% for h in hours %}
+          <div class="col{% if h.peak %} peak{% endif %}">
+            <div class="bar" style="height: {{ h.hpx }}px"></div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="ticks">
+          {% for h in hours %}<span>{{ h.tick }}</span>{% endfor %}
+        </div>
+      </div>
+      <div class="chart-box chart-week">
+        <div class="chart-cap">按星期</div>
+        <div class="cols week">
+          {% for w in weekdays %}
+          <div class="col{% if w.hpx >= 56 %} hot{% endif %}">
+            <div class="bar" style="height: {{ w.hpx }}px"></div>
+          </div>
+          {% endfor %}
+        </div>
+        <div class="ticks">
+          {% for w in weekdays %}<span>{{ w.label }}</span>{% endfor %}
+        </div>
+      </div>
+    </div>
+    <div class="grid" style="margin-top: 10px;">
+      {% for d in day_night %}
+      <div class="cell half"><div class="l">{{ d.label }}</div><div class="v">{{ d.value }}</div></div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="section">
+    <div class="sec-title">讨论关键词
+      <span class="hint">仅自然讨论，不含命令与 Bot 对话</span>
+    </div>
+    {% if keywords_all %}
+    <div class="pill-row">
+      {% for k in keywords_all %}
+      <span class="kw{% if k.hot %} hot{% endif %}" style="font-size: {{ k.size }}px">{{ k.word | safe }} ×{{ k.count }}</span>
+      {% endfor %}
+    </div>
+    {% if keywords_recent %}
+    <div class="chart-cap" style="margin-top: 12px;">近 {{ recent_window_days }} 天</div>
+    <div class="pill-row">
+      {% for k in keywords_recent %}
+      <span class="kw" style="font-size: {{ k.size }}px">{{ k.word | safe }} ×{{ k.count }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% else %}
+    <div class="empty">（暂无可统计的文本关键词）</div>
+    {% endif %}
+  </div>
+
+  <div class="section">
+    <div class="sec-title">消息风格<span class="hint">{{ style_hint }}</span></div>
+    <div class="grid">
+      {% for c in style_grid %}
+      <div class="cell"><div class="l">{{ c.label }}</div><div class="v">{{ c.value }}</div></div>
+      {% endfor %}
+    </div>
+    <div class="burst-line">{{ burst }}</div>
+    {% if media %}
+    <div class="chart-cap" style="margin-top: 14px;">媒体构成（占全部消息）</div>
+    <div class="media-bar">
+      {% for m in media %}<span style="width: {{ m.pct }}; background: {{ m.color }};"></span>{% endfor %}
+    </div>
+    <div class="legend">
+      {% for m in media %}
+      <span class="it"><span class="dot" style="background: {{ m.color }};"></span>{{ m.label }} {{ m.pct }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="section">
+    <div class="sec-title">互动关系<span class="hint">仅聊天系统内的互动频次</span></div>
+    {% if social_rows %}
+    {% for row in social_rows %}
+    <div class="srow">
+      <div class="k">{{ row.label }}</div>
+      <div class="v">
+        {% for it in row['items'] %}{{ it.name | safe }}<span class="c">×{{ it.count }}</span>{% if not loop.last %}　{% endif %}{% endfor %}
+      </div>
+    </div>
+    {% endfor %}
+    {% else %}
+    <div class="empty">（暂无互动记录）</div>
+    {% endif %}
+  </div>
+
+  <div class="section">
+    <div class="sec-title">Bot 互动<span class="hint">统计指标非心理指标</span></div>
+    <div class="bot-grid">
+      {% for b in bot_grid %}
+      <div class="cell half"><div class="l">{{ b.label }}</div><div class="v">{{ b.value }}</div>
+        {% if b.sub %}<div class="s">{{ b.sub }}</div>{% endif %}
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+
+  <div class="footer">
+    <span>Chat Insight · 基于 ChatLogger 只读统计</span>
+    <span>生成于 {{ generated_at }}</span>
+  </div>
+
+</div>
+</body>
+</html>

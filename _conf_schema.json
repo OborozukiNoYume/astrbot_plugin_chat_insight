@@ -77,6 +77,20 @@
     "default": "current_group",
     "hint": "current_group 为仅统计当前群（防止跨群数据泄露）；all 为全部会话"
   },
+  "render_mode": {
+    "description": "用户画像输出形式",
+    "type": "string",
+    "default": "text",
+    "options": [
+      "text",
+      "image"
+    ],
+    "labels": [
+      "文本",
+      "图片卡片"
+    ],
+    "hint": "图片卡片经 AstrBot 官方 t2i 服务渲染，昵称与统计数据需上传该服务；渲染失败自动回退文本输出"
+  },
   "cache_ttl_minutes": {
     "description": "画像缓存时间",
     "type": "int",
