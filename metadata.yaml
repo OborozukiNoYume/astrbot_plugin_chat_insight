@@ -1,6 +1,6 @@
 name: astrbot_plugin_chat_insight
 display_name: 聊天洞察
 desc: 基于 ChatLogger 数据底座的只读统计与画像前端：群聊统计、发言排行、词云关键词、用户画像与群画像。
-version: v0.3.0
+version: v0.4.0
 author: OborozukiNoYume
 repo: https://github.com/OborozukiNoYume/astrbot_plugin_chat_insight
