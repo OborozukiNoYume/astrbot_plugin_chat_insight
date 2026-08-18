@@ -12,6 +12,10 @@ from __future__ import annotations
 
 import re
 
+# 平台把消息链里的 At 段渲染成 "@名字(QQ号)" 文本，可能混入命令参数；
+# 命令解析遇到该形态时提取 QQ 号作为目标用户（兼容全角括号）
+AT_RENDER_RE = re.compile(r"^@.+?[(（](\d{1,20})[)）]$")
+
 # 时间关键词（长词在前，防"上月"吃掉"上上月"类歧义）
 _TIME_KEYWORDS: list[tuple[re.Pattern, str]] = [
     (re.compile(r"(?:最近|近)\s*(\d{1,3})\s*[天日]"), "n_days"),

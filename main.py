@@ -62,7 +62,7 @@ _PLUGIN_COMMAND_WORDS = frozenset(
     PLUGIN_NAME,
     "OborozukiNoYume",
     "聊天洞察：基于 ChatLogger 的群聊统计、发言排行、词云关键词、用户画像（只读）",
-    "0.4.0",
+    "0.4.1",
 )
 class ChatInsight(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -189,10 +189,15 @@ class ChatInsight(Star):
                 top_n = int(t)
                 i += 1
             else:
-                raise ServiceError(
-                    f"无法识别的参数「{t}」。支持：用户 <QQ号|我>（或 user me）、全群、"
-                    "群 <群号>（或 group）、时间（今日/昨日/本周/上月/本季度/半年/今年/历史/N天）、条数（数字）。"
-                )
+                m = colloquial.AT_RENDER_RE.match(t)
+                if m:  # At 段被渲染成 "@名字(QQ号)" 混入参数：提取 QQ 号为目标
+                    user_id = m.group(1)
+                    i += 1
+                else:
+                    raise ServiceError(
+                        f"无法识别的参数「{t}」。支持：用户 <QQ号|我>（或 user me）、全群、"
+                        "群 <群号>（或 group）、时间（今日/昨日/本周/上月/本季度/半年/今年/历史/N天）、条数（数字）。"
+                    )
         return user_id, group_id, time_spec, top_n, all_group
 
     @staticmethod

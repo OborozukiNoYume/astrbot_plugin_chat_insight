@@ -1,6 +1,16 @@
 """个人词云口语触发匹配。"""
 
-from insight.colloquial import match_wordcloud
+from insight.colloquial import AT_RENDER_RE, match_wordcloud
+
+
+def test_at_render_token_extracts_qq():
+    # 平台把 At 段渲染成 "@名字(QQ号)" 混入命令参数，解析时提取 QQ 号
+    assert AT_RENDER_RE.match("@阿蒙3号(2918354494)").group(1) == "2918354494"
+    assert AT_RENDER_RE.match("@名字（123456）").group(1) == "123456"  # 全角括号
+    assert AT_RENDER_RE.match("@all") is None
+    assert AT_RENDER_RE.match("@名字") is None
+    assert AT_RENDER_RE.match("词云") is None
+    assert AT_RENDER_RE.match("2918354494") is None
 
 
 def test_personal_default_today():
