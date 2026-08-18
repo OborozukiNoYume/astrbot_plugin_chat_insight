@@ -88,7 +88,18 @@ AstrBot → ChatLogger → chatlog.db → Chat Insight（本插件，只读）
 
 ## 图片卡片（render_mode = image）
 
-`/用户画像`、`/群画像`、定时群报与 `/聊天统计` 的总览/趋势/时段可切换为 HTML 卡片图输出（模板在 `insight/templates/`，数据组装与文本版同源同口径）。渲染经 AstrBot 官方 t2i 服务（`Star.html_render`）——**模板与统计数据（昵称、QQ 号、群号等）需上传该服务**，介意隐私请保持 `text`。渲染服务过载/超时/返回异常内容时自动回退既有文本输出；词云不并入卡片，仍独立成图。
+`/用户画像`、`/群画像`、定时群报与 `/聊天统计` 的总览/趋势/时段可切换为 HTML 卡片图输出（模板在 `insight/templates/`，数据组装与文本版同源同口径）。
+
+渲染链（逐级回退）：**本地 chromium**（playwright，模板与数据不出本机，单张 <1 秒）→ **AstrBot 官方 t2i 服务**（本地不可用时，**模板与统计数据——昵称、QQ 号、群号等——需上传该服务**）→ 文本输出。各级 45 秒超时，服务过载/返回异常内容同样自动回退；词云不并入卡片，仍独立成图。
+
+启用本地渲染（可选，强烈推荐）：
+
+```bash
+.venv/bin/pip install playwright
+.venv/bin/playwright install chromium
+```
+
+未安装时自动使用云端渲染，功能不受影响。
 
 ## 已知限制
 

@@ -147,7 +147,17 @@ class _FakeStar:
         return self.result
 
 
-def test_render_user_card_returns_path(user_full, tmp_path):
+@pytest.fixture
+def no_local(monkeypatch):
+    """屏蔽本地 chromium 截图，使 _render_card 直接走云端 FakeStar 链路。"""
+
+    async def _none(template, data, label):
+        return None
+
+    monkeypatch.setattr(cardrender, "_local_screenshot", _none)
+
+
+def test_render_user_card_returns_path(user_full, tmp_path, no_local):
     real_png = tmp_path / "card.png"
     real_png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 32)  # 魔数校验需真图片头
     star = _FakeStar(result=str(real_png))
@@ -162,7 +172,7 @@ def test_render_user_card_returns_path(user_full, tmp_path):
     assert options == {"type": "png"}
 
 
-def test_render_user_card_falls_back_on_error(user_full):
+def test_render_user_card_falls_back_on_error(user_full, no_local):
     star = _FakeStar(error=RuntimeError("all endpoints failed"))
     assert asyncio.run(
         cardrender.render_user_card(star, "三哥", U1, user_full, TZ)
@@ -187,7 +197,7 @@ def test_is_image_file(tmp_path):
     assert not cardrender._is_image_file(str(tmp_path / "absent.png"))
 
 
-def test_render_rejects_non_image_response(user_full):
+def test_render_rejects_non_image_response(user_full, no_local):
     # 渲染服务过载返回 200+文本时框架不抛异常，必须按魔数识别并降级
     bad = _FakeStar(result="/tmp/not_exist.png")  # 文件不存在
     assert asyncio.run(
@@ -195,13 +205,42 @@ def test_render_rejects_non_image_response(user_full):
     ) is None
 
 
-def test_render_times_out_on_hanging_service(user_full, monkeypatch):
+def test_render_times_out_on_hanging_service(user_full, monkeypatch, no_local):
     # 渲染服务排队挂起时框架 HTTP 客户端 5 分钟才超时；45 秒上限内必须主动放弃降级
     monkeypatch.setattr(cardrender, "RENDER_TIMEOUT_SECONDS", 0.2)
     star = _FakeStar(hang=5)
     assert asyncio.run(
         cardrender.render_user_card(star, "三哥", U1, user_full, TZ)
     ) is None
+
+
+def test_render_prefers_local(monkeypatch, user_full, tmp_path):
+    """本地截图可用时不触碰云端（FakeStar.html_render 抛错也不影响）。"""
+    out = tmp_path / "local.png"
+    out.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 32)
+
+    async def _local(template, data, label):
+        return str(out)
+
+    monkeypatch.setattr(cardrender, "_local_screenshot", _local)
+    star = _FakeStar(error=RuntimeError("不应被调用"))
+    assert asyncio.run(
+        cardrender.render_user_card(star, "三哥", U1, user_full, TZ)
+    ) == str(out)
+
+
+def test_local_screenshot_real_card(user_full):
+    """端到端：playwright + chromium + 内置 NotoSansSC 真实截图（环境缺件则跳过）。"""
+    pytest.importorskip("playwright")
+    data = cardrender.build_user_card_data("三哥", U1, user_full, TZ)
+    path = asyncio.run(cardrender._local_screenshot("user_profile", data, "用户画像"))
+    if path is None:  # chromium 未安装（playwright install）时允许跳过
+        pytest.skip("chromium not installed")
+    assert cardrender._is_image_file(path)
+    from PIL import Image
+
+    w, _h = Image.open(path).size
+    assert w == 1360  # body 720 含 border-box padding，卡片内容宽 680 × dsf 2
 
 
 # ---------- 群报卡片 ----------
@@ -245,7 +284,7 @@ def test_report_card_template_renders_locally(service):
     assert "发言榜" in html and "高频关键词" not in html and "三哥" in html
 
 
-def test_render_report_card_paths(service):
+def test_render_report_card_paths(service, no_local):
     data = cardrender.build_report_card_data(
         service, G1, ALL_SECTIONS, None, 0, "daily"
     )
@@ -276,7 +315,7 @@ def test_group_card_template_renders_locally(service):
     assert "群关键词" not in html  # 关键词区块已砍：群词云即其可视化
 
 
-def test_render_group_card_paths(service):
+def test_render_group_card_paths(service, no_local):
     p = service.group_profile(G1)
     assert asyncio.run(
         cardrender.render_group_card(_FakeStar(result="x"), G1, p, TZ)
@@ -337,7 +376,7 @@ def test_stat_subcommand_templates_render_locally(service):
     assert "24 小时分布" in html and "逐时消息量" in html
 
 
-def test_stat_subcommand_cards_fall_back(service):
+def test_stat_subcommand_cards_fall_back(service, no_local):
     r = resolve_range("7天", TZ, now_ts=NOW)
     star = _FakeStar(result="x")  # 非图片路径
     s = service.summary(r, G1)

@@ -14,19 +14,85 @@ from __future__ import annotations
 import asyncio
 import html
 import logging
+import tempfile
+import time
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+from jinja2 import Environment
 
 from .service import ServiceError
 
 # 与 AstrBot LogManager 同名 logger：宿主环境进统一日志，独立测试零依赖
 logger = logging.getLogger("astrbot")
 
-# 渲染服务偶发排队/挂起（框架 HTTP 客户端默认 5 分钟才超时），超过该秒数
-# 立即放弃并降级文本，避免群里长时间无响应。正常渲染耗时 5~12 秒。
+# 渲染偶发排队/挂起（云端 t2i 或本地 chromium 启动异常），超过该秒数立即
+# 放弃并降级，避免群里长时间无响应。云端正常 5~12 秒，本地正常 <2 秒。
 RENDER_TIMEOUT_SECONDS = 45
+
+# ---------- 本地渲染（playwright + 内置中文字体，模板与数据不出本机） ----------
+
+_FONT_PATH = Path(__file__).resolve().parent.parent / "assets" / "fonts" / "NotoSansSC.ttf"
+_FONT_INJECT = (
+    '<style>@font-face{font-family:"NotoSansSC-Insight";'
+    f'src:url("file://{_FONT_PATH}");}}'
+    'body{font-family:"NotoSansSC-Insight","PingFang SC","Microsoft YaHei",'
+    '"Noto Sans CJK SC",sans-serif !important;}</style>'
+)
+_CARD_DIR = Path(tempfile.gettempdir()) / "insight_cards"
+_CARD_TTL_SECONDS = 86400
+
+
+def _cleanup_old_cards() -> None:
+    if not _CARD_DIR.is_dir():
+        return
+    cutoff = time.time() - _CARD_TTL_SECONDS
+    for f in _CARD_DIR.glob("card_*.png"):
+        try:
+            if f.stat().st_mtime < cutoff:
+                f.unlink()
+        except OSError:
+            pass
+
+
+async def _local_screenshot(template: str, data: dict, label: str) -> str | None:
+    """playwright 本地截图：Jinja2 渲染 → chromium 加载 → 截卡片元素。
+
+    playwright 未安装 / chromium 启动失败 / 任何异常均返回 None（调用方转云端）。
+    """
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError:
+        return None
+    try:
+        html_str = Environment(autoescape=False).from_string(
+            load_template(template)
+        ).render(data)
+        html_str = html_str.replace("</head>", _FONT_INJECT + "</head>", 1)
+        _cleanup_old_cards()
+        _CARD_DIR.mkdir(parents=True, exist_ok=True)
+        out = _CARD_DIR / f"card_{int(time.time() * 1000)}.png"
+        async with async_playwright() as p:
+            browser = await p.chromium.launch(args=["--disable-dev-shm-usage"])
+            try:
+                page = await browser.new_page(
+                    viewport={"width": 760, "height": 800}, device_scale_factor=2,
+                )
+                await page.set_content(html_str)
+                await page.evaluate("document.fonts.ready")
+                el = await page.query_selector(".card")
+                await el.screenshot(path=str(out))
+            finally:
+                await browser.close()
+        if _is_image_file(str(out)):
+            logger.info(f"[insight] {label}卡片已本地渲染: {out}")
+            return str(out)
+        return None
+    except Exception as e:
+        logger.warning(f"[insight] {label}卡片本地渲染失败，转云端: {e}")
+        return None
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates"
 
@@ -436,7 +502,20 @@ def build_hours_card_data(group_name: str, group_id, r_label: str, span: str,
 
 
 async def _render_card(star, template: str, data: dict, label: str) -> str | None:
-    """全部卡片的共用渲染封装：超时/异常/非图片响应一律返回 None（降级文本）。"""
+    """全部卡片的共用渲染封装。
+
+    渲染链：本地 chromium（模板与数据不出本机）→ 云端 t2i（本地不可用时回退，
+    数据需上传）→ None（调用方降级文本）。各级超时/异常/非图片响应均向后回退。
+    """
+    try:
+        path = await asyncio.wait_for(
+            _local_screenshot(template, data, label),
+            timeout=RENDER_TIMEOUT_SECONDS,
+        )
+        if path:
+            return path
+    except Exception as e:
+        logger.warning(f"[insight] {label}卡片本地渲染超时，转云端: {e}")
     try:
         # png 保证小字号清晰（框架默认 jpeg q40 对文字过糊）
         path = await asyncio.wait_for(
@@ -448,7 +527,7 @@ async def _render_card(star, template: str, data: dict, label: str) -> str | Non
         )
         if not path or not _is_image_file(str(path)):
             return None
-        logger.info(f"[insight] {label}卡片已渲染: {path}")
+        logger.info(f"[insight] {label}卡片已渲染(云端): {path}")
         return str(path)
     except Exception as e:
         logger.warning(f"[insight] {label}卡片渲染失败，回退文本: {e}")
