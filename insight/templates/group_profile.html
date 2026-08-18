@@ -71,12 +71,6 @@
   .trend-cap { display: flex; justify-content: space-between; font-size: 10px;
                color: #b0b7c8; margin-top: 4px;
                font-family: "SF Mono", Consolas, monospace; }
-  .pill-row { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: baseline; }
-  .kw {
-    background: #eef0fb; color: #3b48b8; border-radius: 999px; padding: 3px 11px;
-    line-height: 1.45;
-  }
-  .kw.hot { background: linear-gradient(135deg,#5063f0,#8b5cf0); color: #fff; }
   .rrow { display: flex; align-items: center; gap: 10px; padding: 6px 0; }
   .medal {
     width: 22px; height: 22px; border-radius: 50%; flex: none;
@@ -172,17 +166,6 @@
     </div>
     {% endif %}
   </div>
-
-  {% if keywords %}
-  <div class="section">
-    <div class="sec-title">群关键词<span class="hint">近 {{ keyword_window_days }} 天 · 仅自然讨论</span></div>
-    <div class="pill-row">
-      {% for k in keywords %}
-      <span class="kw{% if k.hot %} hot{% endif %}" style="font-size: {{ k.size }}px">{{ k.word | safe }} ×{{ k.count }}</span>
-      {% endfor %}
-    </div>
-  </div>
-  {% endif %}
 
   {% if top_active %}
   <div class="section">

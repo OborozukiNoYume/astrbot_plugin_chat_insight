@@ -98,7 +98,7 @@ def _fake_full(name: str) -> dict:
 def test_escapes_user_controlable_text():
     data = cardrender.build_user_card_data("<script>x", U1, _fake_full("毒"), TZ_FIXED)
     assert data["name"] == "&lt;script&gt;x"
-    assert data["keywords_all"][0]["word"] == "&lt;b&gt;毒&lt;/b&gt;"
+    assert "keywords" not in data  # 关键词已砍：词云覆盖
     assert data["social_rows"][0]["items"][0]["name"] == "&lt;i&gt;毒&lt;/i&gt;"
 
 
@@ -116,8 +116,9 @@ def test_template_renders_locally(user_full):
     html = Environment(autoescape=False).from_string(
         cardrender.load_template("user_profile")
     ).render(data)
-    for block in ("活跃规律", "讨论关键词", "消息风格", "互动关系", "Bot 互动"):
+    for block in ("活跃规律", "消息风格", "互动关系", "Bot 互动"):
         assert block in html
+    assert "讨论关键词" not in html  # 关键词区块已砍：个人词云即其可视化
     assert "三哥" in html and "暂无互动记录" not in html  # 合成数据有互动
 
 
@@ -153,7 +154,7 @@ def test_render_user_card_returns_path(user_full, tmp_path):
     )
     assert path == str(real_png)
     tmpl, data, return_url, options = star.calls[0]
-    assert "讨论关键词" in tmpl  # 模板本体被上传
+    assert "消息风格" in tmpl  # 模板本体被上传
     assert data["uid"] == U1
     assert return_url is False  # 下载到本地文件而非远端 URL
     assert options == {"type": "png"}
@@ -259,8 +260,9 @@ def test_group_card_template_renders_locally(service):
     html = Environment(autoescape=False).from_string(
         cardrender.load_template("group_profile")
     ).render(data)
-    for block in ("活跃分布", "日趋势", "群关键词", "发言榜", "媒体构成", "高频互动对"):
+    for block in ("活跃分布", "日趋势", "发言榜", "媒体构成", "高频互动对"):
         assert block in html
+    assert "群关键词" not in html  # 关键词区块已砍：群词云即其可视化
 
 
 def test_render_group_card_paths(service):

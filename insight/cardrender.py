@@ -75,8 +75,9 @@ def _name_pairs(pairs, limit: int = 8) -> list[dict]:
 
 
 def build_user_card_data(name: str, uid: str, p: dict, tz: ZoneInfo) -> dict:
-    """user_full 六视图 dict → 用户画像卡片模板数据（纯函数，全部 JSON 可序列化）。"""
-    card, act, kw = p["card"], p["activity"], p["keywords"]
+    """user_full 六视图 dict → 用户画像卡片模板数据（纯函数，全部 JSON 可序列化）。
+    关键词视图不进卡片：个人词云（/词云）即其可视化。"""
+    card, act = p["card"], p["activity"]
     style, social, bot = p["style"], p["social"], p["bot"]
 
     hour_max = max(act["hour_counts"]) or 1
@@ -99,18 +100,6 @@ def build_user_card_data(name: str, uid: str, p: dict, tz: ZoneInfo) -> dict:
         }
         for i, c in enumerate(act["weekday_counts"])
     ]
-
-    def keyword_items(pairs) -> list[dict]:
-        mx = pairs[0][1] if pairs else 1
-        return [
-            {
-                "word": _esc(w),
-                "count": c,
-                "size": round(13 + (c / mx) * 7, 1),
-                "hot": c == mx,
-            }
-            for w, c in pairs
-        ]
 
     media = [
         {
@@ -171,9 +160,6 @@ def build_user_card_data(name: str, uid: str, p: dict, tz: ZoneInfo) -> dict:
             {"label": "最长连续", "value": f"{act['max_streak_days']} 天"},
             {"label": "当前连续", "value": f"{act['current_streak_days']} 天"},
         ],
-        "keywords_all": keyword_items(kw["all_time"]),
-        "keywords_recent": keyword_items(kw["recent"]),
-        "recent_window_days": kw["recent_window_days"],
         "style_hint": f"文本样本 {style['text_total']:,} 条",
         "style_grid": [
             {"label": "P50 长度", "value": f"{style['p50']} 字"},
@@ -227,7 +213,7 @@ def build_report_card_data(service, group_id, sections, top_n=None,
 
     静默群（区间消息量低于 min_messages）返回 None；群无记录由
     service.summary 抛 ServiceError（调用方记日志跳过），与文本路径一致。
-    rank/keywords 分节独立容错：无数据跳过该区块，不影响整张卡片。
+    rank 分节独立容错：无数据跳过该区块，不影响整张卡片。
     """
     from . import report as report_mod
 
@@ -316,7 +302,6 @@ def build_group_card_data(group_id: str, p: dict, tz: ZoneInfo) -> dict:
          "wpx": round(c / act_max * 100) if act_max else 0}
         for i, (n, c) in enumerate(p["top_active"], 1)
     ]
-    kw_max = p["top_keywords"][0][1] if p["top_keywords"] else 1
     media = [
         {
             "label": _MEDIA_COLORS.get(k, (k, "#94a3b8"))[0],
@@ -350,12 +335,6 @@ def build_group_card_data(group_id: str, p: dict, tz: ZoneInfo) -> dict:
         "trend_days": p["trend_days"],
         "trend": trend,
         "top_active": top_active,
-        "keywords": [
-            {"word": _esc(w), "count": c,
-             "size": round(13 + (c / kw_max) * 7, 1), "hot": c == kw_max}
-            for w, c in p["top_keywords"]
-        ],
-        "keyword_window_days": p["keyword_window_days"],
         "media": media,
         "top_pairs": [
             {"a": _esc(a), "b": _esc(b), "count": c}

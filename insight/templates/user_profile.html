@@ -78,12 +78,6 @@
   .cols.week { gap: 6px; }
   .cols.week .bar { background: #d9c8f5; }
   .cols.week .col.hot .bar { background: linear-gradient(#8b5cf0, #a855f7); }
-  .pill-row { display: flex; flex-wrap: wrap; gap: 6px 8px; align-items: baseline; }
-  .kw {
-    background: #eef0fb; color: #3b48b8; border-radius: 999px; padding: 3px 11px;
-    line-height: 1.45;
-  }
-  .kw.hot { background: linear-gradient(135deg,#5063f0,#8b5cf0); color: #fff; }
   .grid { display: flex; flex-wrap: wrap; gap: 8px; }
   .cell {
     width: calc((100% - 24px) / 3); background: #f7f8fc; border-radius: 10px;
@@ -187,29 +181,6 @@
       <div class="cell half"><div class="l">{{ d.label }}</div><div class="v">{{ d.value }}</div></div>
       {% endfor %}
     </div>
-  </div>
-
-  <div class="section">
-    <div class="sec-title">讨论关键词
-      <span class="hint">仅自然讨论，不含命令与 Bot 对话</span>
-    </div>
-    {% if keywords_all %}
-    <div class="pill-row">
-      {% for k in keywords_all %}
-      <span class="kw{% if k.hot %} hot{% endif %}" style="font-size: {{ k.size }}px">{{ k.word | safe }} ×{{ k.count }}</span>
-      {% endfor %}
-    </div>
-    {% if keywords_recent %}
-    <div class="chart-cap" style="margin-top: 12px;">近 {{ recent_window_days }} 天</div>
-    <div class="pill-row">
-      {% for k in keywords_recent %}
-      <span class="kw" style="font-size: {{ k.size }}px">{{ k.word | safe }} ×{{ k.count }}</span>
-      {% endfor %}
-    </div>
-    {% endif %}
-    {% else %}
-    <div class="empty">（暂无可统计的文本关键词）</div>
-    {% endif %}
   </div>
 
   <div class="section">
