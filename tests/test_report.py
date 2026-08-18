@@ -57,6 +57,15 @@ def test_next_report_invalid_args():
         report.next_report_dt(now, "daily", 1, 1, "8点")
 
 
+def test_hhmm_flexible_forms():
+    # 单数字时/分也接受（线上实测有用户填 "18:5"）：18:5 = 18:05
+    t = report.next_report_dt(dt(2026, 8, 15, 7), "daily", 1, 1, "18:5")
+    assert t.strftime("%H:%M") == "18:05"
+    assert report.next_report_dt(dt(2026, 8, 15, 7), "daily", 1, 1, "9:5").strftime("%H:%M") == "09:05"
+    with pytest.raises(ValueError, match="时间"):
+        report.next_report_dt(dt(2026, 8, 15, 7), "daily", 1, 1, "24:00")
+
+
 # ---------- build_report ----------
 
 def make_svc(repo, stopwords, tmp_path, now_ts):

@@ -24,7 +24,7 @@ PERIOD_LABEL = {"daily": "昨日", "weekly": "上周", "monthly": "上月"}
 SECTIONS = ("summary", "rank", "keywords", "wordcloud")
 SECTION_LABELS = {"summary": "总览", "rank": "发言榜", "keywords": "关键词", "wordcloud": "词云"}
 
-_HHMM_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]\d)$")
+_HHMM_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]?\d)$")  # 兼容 H:M / HH:MM 等写法
 
 
 def _parse_hhmm(hhmm: str) -> tuple[int, int]:

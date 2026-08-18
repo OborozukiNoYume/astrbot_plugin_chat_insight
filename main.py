@@ -62,7 +62,7 @@ _PLUGIN_COMMAND_WORDS = frozenset(
     PLUGIN_NAME,
     "OborozukiNoYume",
     "聊天洞察：基于 ChatLogger 的群聊统计、发言排行、词云关键词、用户画像（只读）",
-    "0.4.1",
+    "0.4.2",
 )
 class ChatInsight(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
