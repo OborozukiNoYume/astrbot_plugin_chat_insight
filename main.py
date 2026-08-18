@@ -62,7 +62,7 @@ _PLUGIN_COMMAND_WORDS = frozenset(
     PLUGIN_NAME,
     "OborozukiNoYume",
     "聊天洞察：基于 ChatLogger 的群聊统计、发言排行、词云关键词、用户画像（只读）",
-    "0.4.2",
+    "0.4.3",
 )
 class ChatInsight(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -612,12 +612,16 @@ class ChatInsight(Star):
                     continue
 
                 def _next_target() -> datetime:
+                    hhmm = ":".join(
+                        str(self.config.get(k, d) or d)
+                        for k, d in (("report_hour", "08"), ("report_minute", "00"))
+                    )
                     return report.next_report_dt(
                         datetime.now(tz=svc.tz),
                         str(self.config.get("report_frequency", "weekly") or "weekly"),
                         int(self.config.get("report_day", "1") or 1),
                         int(self.config.get("report_day_of_month", 1) or 1),
-                        str(self.config.get("report_time", "08:00") or "08:00"),
+                        hhmm,
                     )
 
                 try:
