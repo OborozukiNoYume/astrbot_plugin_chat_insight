@@ -62,7 +62,7 @@ _PLUGIN_COMMAND_WORDS = frozenset(
     PLUGIN_NAME,
     "OborozukiNoYume",
     "聊天洞察：基于 ChatLogger 的群聊统计、发言排行、词云关键词、用户画像（只读）",
-    "0.4.3",
+    "0.4.4",
 )
 class ChatInsight(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -624,12 +624,10 @@ class ChatInsight(Star):
                         hhmm,
                     )
 
-                try:
-                    target = _next_target()
-                except ValueError as e:
-                    logger.warning(f"[insight] 群报配置无效，10 分钟后重试: {e}")
-                    await asyncio.sleep(600)
-                    continue
+                # 所有时间/频率/日期配置均为下拉或滑块，非法值不可输入，
+                # 此处不再兜底校验；万一手工改配置文件引入坏值，由循环末尾
+                # 的统一异常处理接管（记日志后 5 分钟重试）。
+                target = _next_target()
                 logger.info(f"[insight] 下次群报: {target:%Y-%m-%d %H:%M %Z}")
                 while True:
                     remain = (target - datetime.now(tz=svc.tz)).total_seconds()
@@ -640,10 +638,7 @@ class ChatInsight(Star):
                     # 会顺延到下一周期，先重算就会把到点这一拍换成明天而永不触发。
                     if datetime.now(tz=svc.tz) >= target:
                         break
-                    try:
-                        fresh = _next_target()
-                    except ValueError:
-                        continue  # 配置暂无效（可能编辑中）：沿用原目标
+                    fresh = _next_target()
                     if abs((fresh - target).total_seconds()) > 1:
                         target = fresh
                         logger.info(f"[insight] 群报时刻已调整: {target:%Y-%m-%d %H:%M %Z}")
