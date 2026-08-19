@@ -19,10 +19,14 @@
   }
   .hd-top { display: flex; align-items: center; gap: 16px; }
   .avatar {
-    width: 62px; height: 62px; border-radius: 50%; flex: none;
+    position: relative; width: 62px; height: 62px; border-radius: 50%; flex: none;
     background: rgba(255,255,255,0.18); border: 2px solid rgba(255,255,255,0.55);
     display: flex; align-items: center; justify-content: center;
-    font-size: 27px; font-weight: 600;
+    font-size: 27px; font-weight: 600; overflow: hidden;
+  }
+  .avatar img {
+    position: absolute; inset: 0; width: 100%; height: 100%;
+    border-radius: 50%; object-fit: cover;
   }
   .hd-name { font-size: 24px; font-weight: 600; line-height: 1.25; word-break: break-all; }
   .hd-uid {
@@ -75,7 +79,10 @@
 
   <div class="header">
     <div class="hd-top">
-      <div class="avatar">{{ group_name | safe }}</div>
+      <div class="avatar">
+        {% if avatar_url %}<img src="{{ avatar_url }}" alt="" onerror="this.remove()">{% endif %}
+        <span>{{ group_name | safe }}</span>
+      </div>
       <div>
         <div class="hd-name">{{ group_name | safe }}</div>
         <div class="hd-uid">群 {{ group_id }}</div>

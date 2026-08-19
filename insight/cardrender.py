@@ -82,6 +82,12 @@ async def _local_screenshot(template: str, data: dict, label: str) -> str | None
                 )
                 await page.set_content(html_str)
                 await page.evaluate("document.fonts.ready")
+                # 头像等外链图:最多等 3 秒,加载失败由模板 onerror 回退首字
+                await page.evaluate(
+                    "Promise.race([Promise.all([...document.images].map(i =>"
+                    " i.complete || new Promise(r => { i.onload = i.onerror = r; }))),"
+                    " new Promise(r => setTimeout(r, 3000))])"
+                )
                 el = await page.query_selector(".card")
                 await el.screenshot(path=str(out))
             finally:
@@ -127,6 +133,18 @@ def _ts(value: int | None, tz: ZoneInfo) -> str:
     if not value:
         return "-"
     return datetime.fromtimestamp(value, tz).strftime("%Y-%m-%d %H:%M")
+
+
+def _qq_avatar_url(uid) -> str | None:
+    """QQ 个人头像（腾讯公开 CDN）。非纯数字 ID（非 QQ 平台）返回 None → 模板回退首字。"""
+    s = str(uid or "")
+    return f"https://q1.qlogo.cn/g?b=qq&nk={s}&s=640" if s.isdigit() else None
+
+
+def _qq_group_avatar_url(gid) -> str | None:
+    """QQ 群头像（腾讯公开 CDN）。"""
+    s = str(gid or "")
+    return f"https://p.qlogo.cn/gh/{s}/{s}/640" if s.isdigit() else None
 
 
 def _is_image_file(path: str) -> bool:
@@ -205,6 +223,7 @@ def build_user_card_data(name: str, uid: str, p: dict, tz: ZoneInfo) -> dict:
     return {
         "name": _esc(name),
         "uid": str(uid),
+        "avatar_url": _qq_avatar_url(uid),
         "scope": card["scope_label"],
         "range_label": card["range"].label,
         "span": card["span"],
@@ -299,6 +318,7 @@ def build_report_card_data(service, group_id, sections, top_n=None,
     return {
         "group_name": _esc(group_name),
         "group_id": str(group_id),
+        "avatar_url": _qq_group_avatar_url(group_id),
         "period_label": report_mod.PERIOD_LABEL[frequency],
         "title_badge": f"{report_mod.PERIOD_LABEL[frequency]}群报",
         "range_label": s["range"].label,
@@ -374,6 +394,7 @@ def build_group_card_data(group_id: str, p: dict, tz: ZoneInfo) -> dict:
     return {
         "group_name": _esc(p["group_name"]),
         "group_id": str(group_id),
+        "avatar_url": _qq_group_avatar_url(group_id),
         "generated_at": datetime.now(tz).strftime("%Y-%m-%d %H:%M"),
         "first_seen": _ts(p["first_seen"], tz),
         "last_seen": _ts(p["last_seen"], tz),
@@ -414,6 +435,7 @@ def build_summary_card_data(group_name: str, group_id, s: dict, tz: ZoneInfo) ->
     return {
         "group_name": _esc(group_name),
         "group_id": str(group_id),
+        "avatar_url": _qq_group_avatar_url(group_id),
         "title_badge": "群活跃度总览",
         "range_label": s["range"].label,
         "span": s["span"],
@@ -450,6 +472,7 @@ def build_trend_card_data(group_name: str, group_id, r_label: str, span: str,
     return {
         "group_name": _esc(group_name),
         "group_id": str(group_id),
+        "avatar_url": _qq_group_avatar_url(group_id),
         "range_label": r_label,
         "span": span,
         "generated_at": datetime.now(tz).strftime("%Y-%m-%d %H:%M"),
@@ -486,6 +509,7 @@ def build_hours_card_data(group_name: str, group_id, r_label: str, span: str,
     return {
         "group_name": _esc(group_name),
         "group_id": str(group_id),
+        "avatar_url": _qq_group_avatar_url(group_id),
         "range_label": r_label,
         "span": span,
         "generated_at": datetime.now(tz).strftime("%Y-%m-%d %H:%M"),
