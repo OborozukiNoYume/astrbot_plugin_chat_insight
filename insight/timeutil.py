@@ -45,58 +45,8 @@ class TimeRange:
     def duration(self) -> int:
         return self.end_ts - self.start_ts
 
-    def previous(self) -> TimeRange:
-        """紧邻的上一对比区间。
-
-        今日/N天按时长平移；本周/本月返回上一个**完整**自然周/月
-        （本周区间截至"现在"，直接平移会得到残缺区间）。
-        """
-        prev_label = _PREV_LABELS.get(self.label) or ("前" + self.label.replace("最近", ""))
-        if self.kind == "week":
-            return TimeRange(self.start_ts - 7 * 86400, self.start_ts, self.tz, prev_label, "week")
-        if self.kind == "month":
-            start_dt = datetime.fromtimestamp(self.start_ts, self.tz)
-            prev_start = _shift_months(start_dt, -1)
-            return TimeRange(
-                int(prev_start.timestamp()), self.start_ts, self.tz, prev_label, "month"
-            )
-        if self.kind == "quarter":
-            start_dt = datetime.fromtimestamp(self.start_ts, self.tz)
-            prev_start = _shift_months(start_dt, -3)
-            return TimeRange(
-                int(prev_start.timestamp()), self.start_ts, self.tz, prev_label, "quarter"
-            )
-        if self.kind == "halfyear":
-            start_dt = datetime.fromtimestamp(self.start_ts, self.tz)
-            prev_start = _shift_months(start_dt, -6)
-            return TimeRange(
-                int(prev_start.timestamp()), self.start_ts, self.tz, prev_label, "halfyear"
-            )
-        if self.kind == "year":
-            start_dt = datetime.fromtimestamp(self.start_ts, self.tz)
-            prev_start = start_dt.replace(year=start_dt.year - 1)
-            return TimeRange(
-                int(prev_start.timestamp()), self.start_ts, self.tz, prev_label, "year"
-            )
-        if self.kind == "all":
-            raise TimeRangeError("「历史」全量区间没有上一对比区间，试试用「今年」看趋势。")
-        d = self.duration
-        return TimeRange(self.start_ts - d, self.start_ts, self.tz, prev_label, self.kind)
-
-    def day_offset_ts(self) -> int:
-        """用于 SQL 天桶换算的参考点：区间起点（或中点）所在的本地时刻。"""
-        return self.start_ts
-
 
 _DAYS_RE = re.compile(r"^(?:近|最近)?(\d+)\s*(天|日|d|D)$")
-
-_PREV_LABELS = {
-    "今日": "昨日", "昨日": "前日",
-    "本周": "上周", "上周": "上上周",
-    "本月": "上月", "上月": "上上月",
-    "本季度": "上季度", "上季度": "上上季度",
-    "半年": "前半年", "今年": "去年",
-}
 
 _ALIASES = {
     "today": "today", "今日": "today", "今天": "today",
@@ -218,11 +168,6 @@ def day_bucket_to_date(bucket: int, tz: ZoneInfo, offset_seconds: int) -> str:
     """把 SQL 天桶还原为本地日期字符串 YYYY-MM-DD。"""
     epoch = bucket * 86400 - offset_seconds
     return datetime.fromtimestamp(epoch, tz).strftime("%Y-%m-%d")
-
-
-def local_hour(ts: int, offset_seconds: int) -> int:
-    """UTC epoch 秒 → 本地小时（0-23），与 SQL 中 CAST((ts+off)%86400/3600) 一致。"""
-    return (ts + offset_seconds) % 86400 // 3600
 
 
 def describe_span(r: TimeRange) -> str:

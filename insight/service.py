@@ -33,7 +33,6 @@ class ServiceError(Exception):
 
 _LONG_THRESHOLD = 100
 _SHORT_THRESHOLD = 10
-# 关键词趋势低基数阈值：任一侧计数低于该值时不给百分比，只给基数
 # 用户行为口径常量
 BURST_GAP_SECONDS = 120  # 相邻消息间隔小于该值视为同一轮发言
 DAY_HOURS = range(6, 18)  # 06:00–17:59 白天，其余夜间

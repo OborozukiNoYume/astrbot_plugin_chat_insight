@@ -25,11 +25,9 @@ def test_db_old_schema(tmp_path):
 
 
 def test_message_count_excludes_bot_and_other_groups(repo, week):
-    # G1 内用户消息；bot 与 G2、私聊不计
-    assert repo.get_message_count(week, group_id=G1) == repo.get_message_count(week, group_id=G1)
-    assert repo.get_message_count(week, group_id=G1) > 0
-    total_all = repo.get_message_count(week)
-    assert total_all >= repo.get_message_count(week, group_id=G1)
+    # 合成库 G1 内：user 非唤醒 23（u1 20 + u2 3... 见 conftest）；
+    # bot 1 条、G2 1 条、私聊 1 条、G1 唤醒 3 条——任何一维泄漏计数都会偏离 23
+    assert repo.get_message_count(week, group_id=G1) == 23
 
 
 def test_active_user_count(repo, week):

@@ -175,12 +175,6 @@ def fmt_word_freq(title: str, pairs, empty_hint: str = "该范围内没有可用
     return "\n".join(lines)
 
 
-
-
-
-
-
-
 # ---------- 用户画像格式化（dict 输入） ----------
 
 def fmt_user_card(name: str, p: dict, tz: ZoneInfo) -> str:
@@ -292,8 +286,6 @@ def fmt_user_full(name: str, p: dict, tz: ZoneInfo) -> str:
         fmt_user_bot(p["bot"]),
     ]
     return "\n\n————\n\n".join(b for b in blocks if b)
-
-
 
 
 def fmt_group_profile(p: dict, tz: ZoneInfo) -> str:

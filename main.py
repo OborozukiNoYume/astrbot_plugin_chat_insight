@@ -55,7 +55,7 @@ _USER_ERRORS = (ServiceError, DatabaseNotAvailable, SchemaIncompatible)
 # 本插件命令词：带唤醒前缀/@Bot 时让命令通道处理，避免双响应
 _PLUGIN_COMMAND_WORDS = frozenset(
     {"发言榜", "发言排行", "rank", "词云", "wordcloud",
-     "用户画像", "profile", "群画像", "画像维护"}
+     "用户画像", "profile", "群画像", "group_profile", "画像维护", "insight-admin"}
 )
 
 @register(
@@ -450,7 +450,7 @@ class ChatInsight(Star):
     @profile_admin.command("状态", alias={"status"})
     @filter.permission_type(filter.PermissionType.ADMIN)
     async def profile_status(self, event: AstrMessageEvent):
-        """数据库契约检查：路径 / schema 版本 / 消息量 / 时间跨度"""
+        """数据源概况：路径 / 消息量 / 时间跨度 / Bot 识别与缓存状态"""
         try:
             svc = self._svc()
         except _USER_ERRORS as e:

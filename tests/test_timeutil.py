@@ -24,9 +24,6 @@ def test_yesterday():
     assert r.label == "昨日"
     for spec in ("昨天", "yesterday", "YESTERDAY"):
         assert resolve_range(spec, TZ, now_ts=NOW).start_ts == ts(2026, 8, 14, 0)
-    prev = r.previous()
-    assert prev.label == "前日"
-    assert prev.start_ts == ts(2026, 8, 13, 0)
 
 
 def test_n_days_with_prefix():
@@ -84,28 +81,11 @@ def test_invalid_spec():
         resolve_range("foo", TZ, now_ts=NOW)
 
 
-def test_previous_range():
-    r = resolve_range("today", TZ, now_ts=NOW).previous()
-    assert (r.start_ts, r.end_ts) == (ts(2026, 8, 14, 0), ts(2026, 8, 15, 0))
-    assert r.label == "昨日"
-
-
-def test_previous_week_is_calendar_week():
-    r = resolve_range("week", TZ, now_ts=NOW).previous()
-    assert (r.start_ts, r.end_ts) == (ts(2026, 8, 3, 0), ts(2026, 8, 10, 0))
-
-
 def test_year():
     r = resolve_range("今年", TZ, now_ts=NOW)
     assert (r.start_ts, r.end_ts) == (ts(2026, 1, 1, 0), ts(2027, 1, 1, 0))
     assert r.label == "今年" and r.kind == "year"
     assert resolve_range("本年", TZ, now_ts=NOW).start_ts == ts(2026, 1, 1, 0)
-
-
-def test_year_previous_is_calendar_year():
-    r = resolve_range("今年", TZ, now_ts=NOW).previous()
-    assert (r.start_ts, r.end_ts) == (ts(2025, 1, 1, 0), ts(2026, 1, 1, 0))
-    assert r.label == "去年"
 
 
 def test_all_history():
@@ -114,8 +94,6 @@ def test_all_history():
     assert r.end_ts == ts(2026, 8, 16, 0)
     assert r.label == "历史" and r.kind == "all"
     assert resolve_range("全部", TZ, now_ts=NOW).kind == "all"
-    with pytest.raises(TimeRangeError, match="没有上一对比区间"):
-        r.previous()
     # 历史不受 max_query_days 限制
     assert resolve_range("历史", TZ, max_days=7, now_ts=NOW).kind == "all"
 
@@ -125,15 +103,11 @@ def test_last_week():
     r = resolve_range("上周", TZ, now_ts=NOW)
     assert (r.start_ts, r.end_ts) == (ts(2026, 8, 3, 0), ts(2026, 8, 10, 0))
     assert r.label == "上周"
-    prev = r.previous()
-    assert (prev.start_ts, prev.end_ts) == (ts(2026, 7, 27, 0), ts(2026, 8, 3, 0))
-    assert prev.label == "上上周"
 
 
 def test_last_month():
     r = resolve_range("上月", TZ, now_ts=NOW)
     assert (r.start_ts, r.end_ts) == (ts(2026, 7, 1, 0), ts(2026, 8, 1, 0))
-    assert resolve_range("上月", TZ, now_ts=NOW).previous().label == "上上月"
 
 
 def test_quarter():
@@ -146,9 +120,6 @@ def test_quarter():
 def test_last_quarter():
     r = resolve_range("上季度", TZ, now_ts=NOW)
     assert (r.start_ts, r.end_ts) == (ts(2026, 4, 1, 0), ts(2026, 7, 1, 0))
-    prev = resolve_range("本季度", TZ, now_ts=NOW).previous()
-    assert (prev.start_ts, prev.end_ts) == (ts(2026, 4, 1, 0), ts(2026, 7, 1, 0))
-    assert prev.label == "上季度"
 
 
 def test_quarter_year_boundary():
@@ -166,9 +137,6 @@ def test_halfyear():
         # 滚动 6 个月：2026-02-16 → 2026-08-16
         assert (r.start_ts, r.end_ts) == (ts(2026, 2, 16, 0), ts(2026, 8, 16, 0)), spec
         assert r.label == "半年"
-    prev = resolve_range("半年", TZ, now_ts=NOW).previous()
-    assert (prev.start_ts, prev.end_ts) == (ts(2025, 8, 16, 0), ts(2026, 2, 16, 0))
-    assert prev.label == "前半年"
 
 
 def test_zongbang_alias_is_all():

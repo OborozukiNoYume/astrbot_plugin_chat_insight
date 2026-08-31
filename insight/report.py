@@ -16,14 +16,12 @@ from .service import ServiceError
 
 # 频率 → (统计区间 spec, 报告标题前缀)
 FREQUENCIES = ("daily", "weekly", "monthly")
-FREQ_LABELS = {"daily": "每日", "weekly": "每周", "monthly": "每月"}
 PERIOD_SPEC = {"daily": "yesterday", "weekly": "lastweek", "monthly": "lastmonth"}
 PERIOD_LABEL = {"daily": "昨日", "weekly": "上周", "monthly": "上月"}
 
 # 播报内容分节（顺序即输出顺序；标识进入配置 report_sections 的 options）。
 # 无独立"关键词"分节：词云即关键词的可视化（无文本时自动降级文字版词频）。
 SECTIONS = ("summary", "rank", "wordcloud")
-SECTION_LABELS = {"summary": "总览", "rank": "发言榜", "wordcloud": "词云"}
 
 _HHMM_RE = re.compile(r"^([01]?\d|2[0-3]):([0-5]?\d)$")  # 兼容 H:M / HH:MM 等写法
 

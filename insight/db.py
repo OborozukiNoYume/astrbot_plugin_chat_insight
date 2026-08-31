@@ -32,7 +32,7 @@ class ChatlogDB:
             raise DatabaseNotAvailable(
                 f"未找到 chatlog.db（{self.path}）。"
                 "请确认已安装 ChatLogger 插件并已产生聊天记录，"
-                "或在聊天统计插件配置中填写正确的 database_path。"
+                "或在聊天洞察插件配置中填写正确的 database_path。"
             )
         try:
             with self.connect() as conn:
@@ -43,7 +43,7 @@ class ChatlogDB:
         if version < CONTRACT_USER_VERSION:
             raise SchemaIncompatible(
                 f"chatlog.db schema 版本过低（user_version={version}，契约要求 >={CONTRACT_USER_VERSION}）。"
-                "请先升级 ChatLogger 插件后再使用聊天统计。"
+                "请先升级 ChatLogger 插件后再使用聊天洞察。"
             )
         self.user_version = version
 

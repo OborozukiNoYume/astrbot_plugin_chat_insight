@@ -25,7 +25,7 @@ AstrBot → ChatLogger → chatlog.db → Chat Insight（本插件，只读）
 | 命令 | 别名 | 参数 | 说明 |
 |---|---|---|---|
 | `/发言榜` | `rank` / `发言排行` | `[群 <群号>] [时间] [N]` | 发言榜：数量 / 排名 / 占比 |
-| `/词云` | `wordcloud` | `[时间]`（默认自己） | 个人词云；查他人按自然顺序任选：`@某人 词云 [时间]`、`@某人 /词云 [时间]`（At 在前需靠口语触发兜底——框架对首段 @普通人的消息不唤醒）、`/词云 @某人 [时间]`；`/词云 全群 [时间]` 查整群（兼容 `user me` / `group` 英文写法） |
+| `/词云` | `wordcloud` | `[时间] [N]`（默认自己） | 个人词云；查他人按自然顺序任选：`@某人 词云 [时间]`、`@某人 /词云 [时间]`（At 在前需靠口语触发兜底——框架对首段 @普通人的消息不唤醒）、`/词云 @某人 [时间]`；`/词云 全群 [时间]` 查整群（兼容 `user me` / `group` 英文写法） |
 | `/用户画像` | `profile` | `[@某人] [用户 <QQ号\|我>] [时间]` | 完整用户画像，六视图合并输出：综合 / 活跃 / 关键词 / 风格 / 互动 / 机器人（查他人需管理员） |
 | `/群画像` | `group_profile` | — | 当前群画像（发言成员数 ≠ 群成员总数） |
 
@@ -38,7 +38,7 @@ AstrBot → ChatLogger → chatlog.db → Chat Insight（本插件，只读）
 ## 统计口径
 
 - **用户消息**：恒过滤 `sender_type='user'`，机器人消息不计入任何统计。
-- **唤醒消息（waked_bot）分场景**：群统计（排行/关键词/群画像）默认排除 `waked_bot=1`（斜杠命令、@机器人、引用机器人、私聊），防止命令文本污染统计，受 `exclude_waked_messages` 配置控制；**用户画像的行为统计（活跃/风格/互动/Bot）不排除**——唤醒 Bot 本身是用户行为；用户画像的关键词恒排除。
+- **唤醒消息（waked_bot）分场景**：群统计（排行/关键词/群画像，例外：群画像的「高频互动对」含对 Bot 的回复，不排除）默认排除 `waked_bot=1`（斜杠命令、@机器人、引用机器人、私聊），防止命令文本污染统计，受 `exclude_waked_messages` 配置控制；**用户画像的行为统计（活跃/风格/互动/Bot）不排除**——唤醒 Bot 本身是用户行为；用户画像的关键词恒排除。
 - **关键词 / 词云**：取 `content_json` 的 `plain` 段（结构化文本），jieba 分词后按 token 出现次数计数；过滤 URL、纯数字、标点、单字、停用词。
 - **消息长度**：`LENGTH(content)` 字符长度，≠ 汉字字数；纯图片/语音等空文本消息不参与。
 - **时间**：`ts` 为 UTC epoch 秒，今日/本周/小时分布/活跃天数均按配置时区（默认 `Asia/Shanghai`）在应用层换算；周为周一起始。
@@ -91,7 +91,7 @@ AstrBot → ChatLogger → chatlog.db → Chat Insight（本插件，只读）
 
 `/用户画像`、`/群画像` 与定时群报可切换为 HTML 卡片图输出（模板在 `insight/templates/`，数据组装与文本版同源同口径）。
 
-渲染链（逐级回退）：**本地 chromium**（playwright，模板与数据不出本机，单张 <1 秒）→ **AstrBot 官方 t2i 服务**（本地不可用时，**模板与统计数据——昵称、QQ 号、群号等——需上传该服务**）→ 文本输出。各级 45 秒超时，服务过载/返回异常内容同样自动回退；词云不并入卡片，仍独立成图。
+渲染链（逐级回退）：**本地 chromium**（playwright，模板与数据不出本机，单张约 1 秒）→ **AstrBot 官方 t2i 服务**（本地不可用时，**模板与统计数据——昵称、QQ 号、群号等——需上传该服务**）→ 文本输出。各级 45 秒超时，服务过载/返回异常内容同样自动回退；词云不并入卡片，仍独立成图。
 
 启用本地渲染（可选，强烈推荐）：
 
@@ -105,7 +105,7 @@ AstrBot → ChatLogger → chatlog.db → Chat Insight（本插件，只读）
 ## 已知限制
 
 - 时区带夏令时（DST）的地区，天/小时桶按区间起点的固定偏移换算，跨 DST 切换日有近似（中国时区无影响）。
-- 「最常被谁回复」（`reply_user_id` 无索引）与「@ 网络」（`json_each` 展开）为已知全扫描，已限群范围 + 90 天时间窗；变慢后由 chatlogger 上游按缓建预案加索引。
+- 「最常被谁回复」（`reply_user_id` 无索引）与「@ 网络」（`json_each` 展开）为已知全扫描，按画像时间范围（默认历史=全期）执行；「最常被@」已限 90 天窗口；变慢后由 chatlogger 上游按缓建预案加索引。
 - 用户风格的连发统计需按 `(user_id, ts)` 索引拉取该用户全部 ts（纯整数序列）；活跃大户首次查询为秒级，靠 TTL 缓存缓解。
 - 词云 PNG 按区间命名写入 `plugin_data`，生成时自动清理超过 `wordcloud_retention_days`（默认 7 天）的旧图。
 
@@ -113,12 +113,12 @@ AstrBot → ChatLogger → chatlog.db → Chat Insight（本插件，只读）
 
 1. 依赖 ChatLogger 插件（数据来源）；首次加载时 AstrBot 自动安装 `requirements.txt`（jieba / wordcloud / emoji）。
 2. 将本目录放入（或符号链接到）`data/plugins/astrbot_plugin_chat_insight`。
-3. 若此前使用 chat_statistics / user_profile，请停用或移除它们以避免命令冲突（`/词云`、`/统计`、`/profile` 等命令名重叠）。
+3. 若此前使用 chat_statistics / user_profile，请停用或移除它们以避免命令冲突（`/词云`、`/用户画像`（`/profile`）等命令名重叠）。
 
 ## 开发
 
 ```bash
-python -m pytest tests/ -q   # 105 个用例：契约/时区/口径/画像/群报/缓存/坏JSON/边界
+python -m pytest tests/ -q：契约/时区/口径/画像/群报/缓存/坏JSON/边界
 ```
 
 包结构：`insight/`（纯 Python）：`db`（只读连接）· `timeutil`（唯一时间实现）· `textproc`（清洗/分词）· `repository`（全部 SQL）· `service`（业务聚合）· `render`（渲染与降级）· `colloquial`（口语触发匹配）· `cache`（画像 TTL 缓存）。

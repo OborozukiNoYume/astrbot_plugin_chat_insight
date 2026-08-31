@@ -185,7 +185,7 @@ class ChatlogRepository:
         return bool(row)
 
     def db_stats(self) -> dict:
-        """库概况（/用户画像 状态 用）。"""
+        """库概况（/画像维护 状态 用）。"""
         total, oldest, newest = self._query(
             "SELECT COUNT(*), MIN(ts), MAX(ts) FROM messages", []
         )[0]

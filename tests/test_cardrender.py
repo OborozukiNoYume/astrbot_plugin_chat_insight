@@ -233,6 +233,7 @@ def test_local_screenshot_real_card(user_full):
     """端到端：playwright + chromium + 内置 NotoSansSC 真实截图（环境缺件则跳过）。"""
     pytest.importorskip("playwright")
     data = cardrender.build_user_card_data("三哥", U1, user_full, TZ)
+    data["avatar_url"] = None  # 斩断 QQ 头像外链,保持测试离线
     path = asyncio.run(cardrender._local_screenshot("user_profile", data, "用户画像"))
     if path is None:  # chromium 未安装（playwright install）时允许跳过
         pytest.skip("chromium not installed")

@@ -114,10 +114,10 @@ def default_rows():
         )
 
     return [
-        # --- 08-13（白天 10:00）：u1 两条，包含本周对比用词 ---
+        # --- 08-13（白天 10:00）：u1 两条，包含分词对比样本词 ---
         row(U1, "张三", "AI AI AI AI AI AI 显卡", segs(plain("AI AI AI AI AI AI 显卡")), 0, ts(2026, 8, 13, 10, 0)),
         row(U1, "张三", "显卡 显卡 显卡", segs(plain("显卡 显卡 显卡")), 0, ts(2026, 8, 13, 11, 0)),
-        # --- 08-14（u1 昵称已改为"三哥"）：关键词趋势基准 ---
+        # --- 08-14（u1 昵称已改为"三哥"）：分词计数基准样本 ---
         row(U1, "三哥", "AI AI AI AI AI AI 模型 模型 模型 模型 模型 模型", segs(plain("AI AI AI AI AI AI 模型 模型 模型 模型 模型 模型")), 0, ts(2026, 8, 14, 9, 30)),
         row(U1, "三哥", "显卡", segs(plain("显卡")), 0, ts(2026, 8, 14, 10, 0)),
         # --- 08-15（今日）：u1 ---
@@ -219,8 +219,3 @@ def service(repo, stopwords, tmp_path):
     )
 
 
-def range_days(repo_days: int = 7):
-    """构造与 resolve_range('N天', TZ, now_ts=NOW) 一致的区间断言用值。"""
-    from insight.timeutil import resolve_range
-
-    return resolve_range(f"{repo_days}天", TZ, now_ts=NOW)
