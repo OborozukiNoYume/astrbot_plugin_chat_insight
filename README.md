@@ -31,8 +31,6 @@ AstrBot → ChatLogger → chatlog.db → Chat Insight（本插件，只读）
 
 **管理命令组**：`/画像维护`（别名 `insight-admin`，仅管理员）——`状态`（数据源契约检查）、`刷新`（清缓存并重识别 Bot ID），裸调用自动列出子命令。
 
-> v0.5.0 按「如无必要勿增实体」收敛：原 `/聊天统计` 组（总览/趋势/时段/关键词/关键词趋势）与 `/昵称` 已移除——时间窗分析与关键词分别由 `/群画像`（含 24h 分布与日趋势卡片）和 `/词云` 覆盖，全期零群友调用。
-
 个人词云口语触发（默认开启，`wordcloud_trigger_enabled` 可关）：「我的词云」类形态需 @机器人或唤醒前缀——`@机器人 我的词云`、`@机器人 我的历史词云`；「@某人 词云 / @某人 /词云 / @某人 历史词云」为指向性请求，免唤醒直接响应；裸「词云」与普通聊天一律不响应。
 
 ## 统计口径
@@ -117,13 +115,11 @@ AstrBot → ChatLogger → chatlog.db → Chat Insight（本插件，只读）
 
 ### 数据备份与迁移（chatlog.db）
 
-chatlog.db 归 ChatLogger 所有（本插件只读），位于 `data/plugin_data/astrbot_plugin_chatlogger/`。换机搬运或替换数据库时：
+数据库在 `data/plugin_data/astrbot_plugin_chatlogger/`，归 ChatLogger 所有（本插件只读）。迁移要点：
 
-1. **先停 AstrBot 进程**再动文件——运行中复制得到的库可能缺少尚未写回的数据。
-2. **备份/外移**：把 `chatlog.db`、`chatlog.db-wal`、`chatlog.db-shm`（存在的话）**三个文件一起复制**。WAL 可能持有主库还没有的最新数据（实测优雅退出后 WAL 也未必落盘），漏掉它备份就是旧的。
-3. **替换为主**：从别处拷入新的 `chatlog.db` 后，**必须连带删掉旧的 `chatlog.db-wal` 与 `chatlog.db-shm`**——否则 SQLite 首次打开时会把残留 WAL 回放到新库上，直接损坏数据。
-4. 新库须满足 `PRAGMA user_version = 3`（与 ChatLogger 的 schema 契约）；不满足时本插件拒绝工作并提示，可先升级 ChatLogger。
-5. 重启后用 `/画像维护 状态` 验证数据源就绪（消息总数/时间跨度应与预期一致）。
+- **先停 AstrBot 再动文件**；备份时 `chatlog.db` / `-wal` / `-shm` **三件套一起拷**——WAL 可能持有未落盘的最新数据，漏掉备份就是旧的。
+- 用别处的库**替换**时，拷入新 `chatlog.db` 后**必须连带删掉旧 `-wal` 与 `-shm`**——残留 WAL 首次打开时回放到新库，直接损坏数据。
+- 新库须满足 `PRAGMA user_version = 3`；重启后 `/画像维护 状态` 验证就绪。
 
 ## 开发
 
