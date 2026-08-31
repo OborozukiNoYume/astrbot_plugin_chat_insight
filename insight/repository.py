@@ -5,7 +5,9 @@
 - 统计用户行为恒过滤 sender_type='user'，bot 消息不计（口径见 README）
 - 时间过滤 ts >= ? AND ts < ?，配合 (group_id, ts)/(user_id, ts)/(ts) 索引
 - @网络 使用 JSON 结构化函数（json_each/json_extract），
-  且一律先经 json_valid 内层过滤——content_json 可能被 chatlogger 截断为非法 JSON
+  且一律先经 json_valid 内层过滤——content_json 可能被 chatlogger 截断为非法 JSON；
+  $.qq 与参数比较统一 CAST AS TEXT——json_extract 结果无列亲和性，
+  若上游某天把 qq 序列化为数字，裸比较会静默归零而非报错
 
 唤醒消息（waked_bot）过滤分场景：
 - 群统计（排行/总览/关键词等）：默认排除（防命令文本污染统计），受 exclude_waked 配置控制
@@ -327,13 +329,12 @@ class ChatlogRepository:
             f"""
             SELECT MIN(ts), MAX(ts), COUNT(*),
                    SUM(CASE WHEN content != '' THEN 1 ELSE 0 END),
-                   AVG(LENGTH(content)), MAX(LENGTH(content)),
                    COUNT(DISTINCT CAST((ts + ?) / 86400 AS INTEGER))
             FROM messages WHERE {where}
             """,
             [offset_seconds] + params,
         )[0]
-        first, last, count, text_count, avg_len, max_len, active_days = row
+        first, last, count, text_count, active_days = row
         # 活跃群数是用户的全局属性，不受 scope 限制
         active_groups = self._query(
             "SELECT COUNT(DISTINCT group_id) FROM messages "
@@ -348,8 +349,6 @@ class ChatlogRepository:
             "active_days": int(active_days or 0),
             "active_groups": int(active_groups or 0),
             "span_days": (int((last - first) / 86400) + 1) if first and last else 0,
-            "avg_length": float(avg_len or 0),
-            "max_length": int(max_len or 0),
         }
 
     def get_user_activity(
@@ -371,12 +370,14 @@ class ChatlogRepository:
         self, r: TimeRange, user_id, group_id=None, limit: int = 50000
     ) -> dict:
         """消息风格原料：长度样本（不拉 content 本体）+ ts 序列（连发轮次，
-        走 (user_id, ts) 索引的纯整数序列）+ 媒体/face 位聚合。"""
+        走 (user_id, ts) 索引的纯整数序列）+ 媒体/face 位聚合。
+        长度样本与 fetch_texts 同口径：ORDER BY ts DESC，超上限保留最新部分。"""
         where, params = self._where(r, group_id, user_id, extra=["content != ''"], waked=False)
         lengths = [
             int(v)
             for (v,) in self._query(
-                f"SELECT LENGTH(content) FROM messages WHERE {where} LIMIT ?",
+                f"SELECT LENGTH(content) FROM messages WHERE {where} "
+                f"ORDER BY ts DESC LIMIT ?",
                 params + [limit],
             )
         ]
@@ -430,7 +431,7 @@ class ChatlogRepository:
         where, params = self._where(r, group_id, user_id, extra=[_JSON_OK], waked=False)
         rows = self._query(
             f"""
-            SELECT json_extract(seg.value, '$.qq') AS qq, COUNT(*) c
+            SELECT CAST(json_extract(seg.value, '$.qq') AS TEXT) AS qq, COUNT(*) c
             FROM (SELECT content_json FROM messages WHERE {where}) m,
                  json_each(m.content_json) seg
             WHERE json_extract(seg.value, '$.t') = 'at'
@@ -454,7 +455,7 @@ class ChatlogRepository:
                     AND {_JSON_OK}) m,
                  json_each(m.content_json) seg
             WHERE json_extract(seg.value, '$.t') = 'at'
-                  AND json_extract(seg.value, '$.qq') = ?
+                  AND CAST(json_extract(seg.value, '$.qq') AS TEXT) = ?
             GROUP BY 1 ORDER BY c DESC LIMIT 10
             """,
             [str(group_id), cutoff, r.end_ts, str(user_id)],
@@ -515,7 +516,7 @@ class ChatlogRepository:
                   SELECT content_json FROM messages WHERE {at_where}
                 ) m, json_each(m.content_json) seg
                 WHERE json_extract(seg.value, '$.t') = 'at'
-                      AND json_extract(seg.value, '$.qq') IN ({ph})
+                      AND CAST(json_extract(seg.value, '$.qq') AS TEXT) IN ({ph})
                 """,
                 [*at_params, *sorted_bots],
             )[0][0]
@@ -554,11 +555,15 @@ class ChatlogRepository:
         return name, int(row[0] or 0), int(row[1] or 0), row[2], row[3]
 
     def get_group_reply_pairs(self, group_id, r: TimeRange, limit: int = 10):
-        """群内高频回复互动对（reply_user_id 冗余列，无需 join）。"""
+        """群内高频回复互动对（reply_user_id 冗余列，无需 join）。
+        口径随群统计（默认排除唤醒消息，受 exclude_waked 配置控制），
+        与同卡片的发言榜/24h 分布/日趋势/媒体构成一致。"""
+        waked_cond = "AND waked_bot = 0" if self.exclude_waked else ""
         rows = self._query(
-            """
+            f"""
             SELECT user_id, reply_user_id, COUNT(*) c FROM messages
-            WHERE group_id = ? AND sender_type = 'user' AND ts >= ? AND ts < ?
+            WHERE group_id = ? AND sender_type = 'user' {waked_cond}
+              AND ts >= ? AND ts < ?
               AND reply_user_id IS NOT NULL AND reply_user_id != user_id
             GROUP BY 1, 2 ORDER BY c DESC LIMIT ?
             """,

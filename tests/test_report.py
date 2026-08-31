@@ -91,8 +91,9 @@ def test_build_report_daily_and_monthly(repo, stopwords, tmp_path):
     title, text, image = report.build_report(svc_d, G1, ["summary", "rank"], None, 0, "daily")
     assert "昨日群报" in title and "发言榜" in text and image is None
     svc_m = make_svc(repo, stopwords, tmp_path, NOW + 17 * 86400)  # 09-01：上月=八月
-    title, _text, _image = report.build_report(svc_m, G1, ["summary"], None, 0, "monthly")
+    title, m_text, _image = report.build_report(svc_m, G1, ["summary"], None, 0, "monthly")
     assert "上月群报" in title
+    assert "消息量" in m_text and "峰值日" in m_text  # monthly 正文渲染不可只断标题
 
 
 def test_build_report_section_selection_and_skip(repo, stopwords, tmp_path):

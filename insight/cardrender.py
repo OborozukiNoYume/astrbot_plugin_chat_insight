@@ -16,6 +16,7 @@ import html
 import logging
 import tempfile
 import time
+import uuid
 from datetime import datetime
 from functools import lru_cache
 from pathlib import Path
@@ -35,9 +36,10 @@ RENDER_TIMEOUT_SECONDS = 45
 # ---------- 本地渲染（playwright + 内置中文字体，模板与数据不出本机） ----------
 
 _FONT_PATH = Path(__file__).resolve().parent.parent / "assets" / "fonts" / "NotoSansSC.ttf"
+# as_uri() 自带百分号编码：路径含空格/#/中文时手拼 file:// URL 会被截断致字体静默失效
 _FONT_INJECT = (
     '<style>@font-face{font-family:"NotoSansSC-Insight";'
-    f'src:url("file://{_FONT_PATH}");}}'
+    f'src:url("{_FONT_PATH.as_uri()}");}}'
     'body{font-family:"NotoSansSC-Insight","PingFang SC","Microsoft YaHei",'
     '"Noto Sans CJK SC",sans-serif !important;}</style>'
 )
@@ -73,7 +75,8 @@ async def _local_screenshot(template: str, data: dict, label: str) -> str | None
         html_str = html_str.replace("</head>", _FONT_INJECT + "</head>", 1)
         _cleanup_old_cards()
         _CARD_DIR.mkdir(parents=True, exist_ok=True)
-        out = _CARD_DIR / f"card_{int(time.time() * 1000)}.png"
+        # 毫秒时间戳 + 随机后缀：并发渲染同毫秒不再互相覆盖
+        out = _CARD_DIR / f"card_{int(time.time() * 1000)}_{uuid.uuid4().hex[:6]}.png"
         async with async_playwright() as p:
             browser = await p.chromium.launch(args=["--disable-dev-shm-usage"])
             try:
@@ -172,8 +175,6 @@ def build_user_card_data(name: str, uid: str, p: dict, tz: ZoneInfo) -> dict:
     hour_max = max(act["hour_counts"]) or 1
     hours = [
         {
-            "h": h,
-            "count": c,
             "hpx": round(c / hour_max * 54) + (2 if c else 0),
             "peak": h in card["peak_hours"],
             "tick": f"{h:02d}" if h % 3 == 0 else "",
@@ -184,7 +185,6 @@ def build_user_card_data(name: str, uid: str, p: dict, tz: ZoneInfo) -> dict:
     weekdays = [
         {
             "label": _WEEKDAY_LABELS[i],
-            "count": c,
             "hpx": round(c / wd_max * 54) + (2 if c else 0),
         }
         for i, c in enumerate(act["weekday_counts"])
@@ -195,7 +195,6 @@ def build_user_card_data(name: str, uid: str, p: dict, tz: ZoneInfo) -> dict:
             "label": _MEDIA_COLORS.get(k, (k, "#94a3b8"))[0],
             "color": _MEDIA_COLORS.get(k, (k, "#94a3b8"))[1],
             "pct": _pct(v),
-            "ratio": round(v, 4),
         }
         for k, v in sorted(style["media_ratios"].items(), key=lambda kv: -kv[1])
         if v > 0
@@ -222,9 +221,9 @@ def build_user_card_data(name: str, uid: str, p: dict, tz: ZoneInfo) -> dict:
     span_days = max(card["span_days"], 1)
     return {
         "name": _esc(name),
-        "uid": str(uid),
+        "uid": _esc(uid),
         "avatar_url": _qq_avatar_url(uid),
-        "scope": card["scope_label"],
+        "scope": _esc(card["scope_label"]),
         "range_label": card["range"].label,
         "span": card["span"],
         "generated_at": datetime.now(tz).strftime("%Y-%m-%d %H:%M"),
@@ -317,7 +316,7 @@ def build_report_card_data(service, group_id, sections, top_n=None,
 
     return {
         "group_name": _esc(group_name),
-        "group_id": str(group_id),
+        "group_id": _esc(group_id),
         "avatar_url": _qq_group_avatar_url(group_id),
         "period_label": report_mod.PERIOD_LABEL[frequency],
         "title_badge": f"{report_mod.PERIOD_LABEL[frequency]}群报",
@@ -330,6 +329,9 @@ def build_report_card_data(service, group_id, sections, top_n=None,
             {"label": "活跃人数", "value": str(s["active_users"]), "sub": "发过至少 1 条"},
             {"label": "峰值日", "value": str(s["peak_messages"]), "sub": s["peak_date"]},
         ],
+        # 峰值日独立命名键：模板正文按名引用，避免 stats 位置重排后静默错值
+        "peak_date": s["peak_date"],
+        "peak_value": str(s["peak_messages"]),
         "days_with_data": f"{s['days_with_data']}/{s['span_days']} 天",
         "rank_total": total,
         "rank_rows": [
@@ -357,8 +359,6 @@ def build_group_card_data(group_id: str, p: dict, tz: ZoneInfo) -> dict:
     hour_max = max(p["hour_counts"]) or 1
     hours = [
         {
-            "h": h,
-            "count": c,
             "hpx": round(c / hour_max * 54) + (2 if c else 0),
             "peak": h in p["peak_hours"],
             "tick": f"{h:02d}" if h % 3 == 0 else "",
@@ -367,7 +367,7 @@ def build_group_card_data(group_id: str, p: dict, tz: ZoneInfo) -> dict:
     ]
     trend_max = max((c for _, c in p["daily_trend"]), default=0)
     trend = [
-        {"date": d, "count": c, "hpx": round(c / trend_max * 54) + (2 if c else 0)}
+        {"date": d, "hpx": round(c / trend_max * 54) + (2 if c else 0)}
         for d, c in p["daily_trend"]
     ]
     act_max = max((c for _, c in p["top_active"]), default=0)
@@ -381,7 +381,6 @@ def build_group_card_data(group_id: str, p: dict, tz: ZoneInfo) -> dict:
             "label": _MEDIA_COLORS.get(k, (k, "#94a3b8"))[0],
             "color": _MEDIA_COLORS.get(k, (k, "#94a3b8"))[1],
             "pct": _pct(v),
-            "ratio": round(v, 4),
         }
         for k, v in sorted(p["media_ratios"].items(), key=lambda kv: -kv[1])
         if v > 0
@@ -393,7 +392,7 @@ def build_group_card_data(group_id: str, p: dict, tz: ZoneInfo) -> dict:
     )
     return {
         "group_name": _esc(p["group_name"]),
-        "group_id": str(group_id),
+        "group_id": _esc(group_id),
         "avatar_url": _qq_group_avatar_url(group_id),
         "generated_at": datetime.now(tz).strftime("%Y-%m-%d %H:%M"),
         "first_seen": _ts(p["first_seen"], tz),

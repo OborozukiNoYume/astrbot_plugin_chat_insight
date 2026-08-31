@@ -40,19 +40,6 @@ def test_rank(service, week):
     assert sum(e.count for e in entries) == total
 
 
-def test_keywords_topn(service, week):
-    pairs, total = service.keywords(week, G1, None, 5)
-    assert len(pairs) <= 5
-    # "AI" 仅出现在 u1 的用户消息里：13/14/15 三天 6+6+7=19 次
-    d = dict(pairs)
-    assert d["AI"] == 19
-
-
-def test_keywords_user_scope(service, week):
-    pairs, _ = service.keywords(week, G1, "222", 10)
-    assert dict(pairs).get("记录") == 1
-
-
 def test_summary_history_uses_days_with_data(service):
     r = service.resolve("历史")
     s = service.summary(r, G1)

@@ -31,14 +31,16 @@ def test_build_user_card_data(user_full):
     # 24 小时柱：24 根、最高柱 56px、峰时柱打标
     assert len(data["hours"]) == 24
     assert max(h["hpx"] for h in data["hours"]) == 56
-    assert {h["h"] for h in data["hours"] if h["peak"]} == {10, 11, 12}
+    assert {i for i, h in enumerate(data["hours"]) if h["peak"]} == {10, 11, 12}
     assert data["hours"][0]["tick"] == "00"
     assert data["hours"][1]["tick"] == ""
     assert len(data["weekdays"]) == 7
-    # 媒体构成：0 占比类型被过滤，按占比降序
+    # 媒体构成：0 占比类型被过滤，按占比降序（pct 形如 "50.0%"，解析回数值排序）
     keys = [m["label"] for m in data["media"]]
     assert keys and keys == sorted(
-        keys, key=lambda k: -next(m["ratio"] for m in data["media"] if m["label"] == k)
+        keys, key=lambda k: -float(next(
+            m["pct"][:-1] for m in data["media"] if m["label"] == k
+        ))
     )
     assert all(m["pct"].endswith("%") for m in data["media"])
     # 互动行：有数据的维度才出现
@@ -107,6 +109,11 @@ def test_empty_social_renders_placeholder():
     p["social"]["mutual"] = []
     data = cardrender.build_user_card_data("甲", U1, p, TZ_FIXED)
     assert data["social_rows"] == []
+    # 名副其实：占位符要真的渲染进模板
+    html = Environment(autoescape=False).from_string(
+        cardrender.load_template("user_profile")
+    ).render(data)
+    assert "暂无互动记录" in html
 
 
 # ---------- 模板本地渲染（不依赖网络渲染服务） ----------
@@ -283,6 +290,8 @@ def test_report_card_template_renders_locally(service):
         cardrender.load_template("report_card")
     ).render(data)
     assert "发言榜" in html and "高频关键词" not in html and "三哥" in html
+    # 回归：峰值日日期必须渲染出来（曾因模板键名错位恒为空白）
+    assert data["peak_date"] in html
 
 
 def test_render_report_card_paths(service, no_local):
@@ -290,6 +299,18 @@ def test_render_report_card_paths(service, no_local):
         service, G1, ALL_SECTIONS, None, 0, "daily"
     )
     assert asyncio.run(cardrender.render_report_card(_FakeStar(result="x"), data)) is None
+
+
+def test_render_report_card_success_path(service, no_local, tmp_path):
+    """成功路径：真实 PNG 响应时返回路径，模板与数据被上传云端链路。"""
+    real_png = tmp_path / "report.png"
+    real_png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 32)
+    data = cardrender.build_report_card_data(service, G1, ALL_SECTIONS, None, 0, "daily")
+    star = _FakeStar(result=str(real_png))
+    assert asyncio.run(cardrender.render_report_card(star, data)) == str(real_png)
+    tmpl, _data, return_url, options = star.calls[0]
+    assert "发言榜" in tmpl and "峰值日" in tmpl
+    assert return_url is False and options == {"type": "png"}
 
 
 # ---------- 群画像卡片 ----------
@@ -321,3 +342,14 @@ def test_render_group_card_paths(service, no_local):
     assert asyncio.run(
         cardrender.render_group_card(_FakeStar(result="x"), G1, p, TZ)
     ) is None
+
+
+def test_render_group_card_success_path(service, no_local, tmp_path):
+    """成功路径：真实 PNG 响应时返回路径。"""
+    real_png = tmp_path / "group.png"
+    real_png.write_bytes(b"\x89PNG\r\n\x1a\n" + b"0" * 32)
+    p = service.group_profile(G1)
+    star = _FakeStar(result=str(real_png))
+    assert asyncio.run(
+        cardrender.render_group_card(star, G1, p, TZ)
+    ) == str(real_png)

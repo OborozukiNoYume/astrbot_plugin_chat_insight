@@ -90,6 +90,15 @@ def test_user_style(service, all_range):
     assert p["max_burst"] == 1
 
 
+def test_user_style_long_ratio_u2(service, all_range):
+    """U2 有一条 108 字长消息（LONG_TEXT）：长消息占比必须按文本样本数分母。"""
+    p = service.user_style(all_range, U2, G1)
+    # u2 在 G1 的非空文本消息：😂/记录/LONG_TEXT/转发/哈哈哈/回复你/@AstrBot = 7 条
+    assert p["text_total"] == 7
+    assert p["long_ratio"] == pytest.approx(1 / 7)
+    assert p["p95"] == len("这是一条很长的消息") * 12  # 唯一长样本即 P95
+
+
 def test_burst_and_pctl_helpers():
     t0 = 1000000
     # [1s, 2s, 130s, 200s, 260s]：1/2 同轮（间隔1s）；130 开新轮（128s>120s），
@@ -168,7 +177,8 @@ def test_group_profile(service):
     pairs = {(a, b): c for a, b, c in p["top_pairs"]}
     assert pairs.get(("李四", "三哥")) == 1
     assert pairs.get(("三哥", "李四")) == 1
-    assert pairs.get(("三哥", "AstrBot")) == 1  # 互动对不排除唤醒（含对 Bot 的回复）
+    # 回复 Bot 的普通消息（非唤醒式）计入互动对；口径随 exclude_waked（见 test_repository）
+    assert pairs.get(("三哥", "AstrBot")) == 1
 
 
 def test_group_profile_empty_group(service):

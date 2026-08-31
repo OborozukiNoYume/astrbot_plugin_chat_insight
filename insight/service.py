@@ -202,14 +202,6 @@ class StatisticsService:
             raise ServiceError(f"{r.label}（{describe_span(r)}）该群没有用户发言记录。")
         return entries, total
 
-    def keywords(self, r: TimeRange, group_id=None, user_id=None, top_n: int | None = None):
-        gid = self._require_group(group_id)
-        n = top_n or self.default_top_n
-        counter = self._keywords(r, group_id=gid, user_id=user_id)
-        if not counter:
-            raise ServiceError(f"{r.label}（{describe_span(r)}）范围内没有可统计的文本关键词。")
-        return counter.most_common(n), sum(counter.values())
-
     def wordcloud(self, r: TimeRange, group_id=None, user_id=None, top_n: int | None = None):
         """返回 (图片路径|None, 词频对, 样本消息数)。图片为 None 时命令层降级文本输出。"""
         gid = self._require_group(group_id)

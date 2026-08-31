@@ -2,7 +2,7 @@
 
 
 import pytest
-from conftest import BOT, G1, G2, NOW, TZ, U1, U2, build_db
+from conftest import BOT, G1, G2, NOW, TZ, U1, U2, build_db, ts
 from insight.db import ChatlogDB, DatabaseNotAvailable, SchemaIncompatible
 from insight.repository import ChatlogRepository
 from insight.timeutil import resolve_range, tz_offset_seconds
@@ -118,6 +118,47 @@ def test_waked_messages_excluded_by_default(repo, week):
         assert "发言榜" in joined2
     finally:
         repo.exclude_waked = True
+
+
+def test_reply_pairs_follow_waked_config(tmp_path):
+    """互动对口径随群统计：默认排除唤醒消息（含唤醒式回复），关闭开关恢复计入。"""
+    import json as json_mod
+
+    def row(n, user, reply_user, waked):
+        content = json_mod.dumps([{"t": "plain", "x": "r"}], ensure_ascii=False)
+        t = NOW - 100 + n
+        return (
+            f"rp{n}", "test", "group", f"test:GroupMessage:{G1}", G1, user, user,
+            "user", waked, "r", content, 32, "mX", reply_user, t, t,
+        )
+
+    rows = [
+        row(1, U1, U2, 0),   # 普通回复：恒计入
+        row(2, U1, U2, 1),   # 唤醒式回复：默认排除
+        row(3, U2, U1, 0),
+    ]
+    r = ChatlogRepository(ChatlogDB(build_db(tmp_path / "pairs.db", rows=rows)))
+    week = resolve_range("7天", TZ, now_ts=NOW)
+    # 平局顺序不保证，按键值断言
+    assert {(a, b): c for a, b, c in r.get_group_reply_pairs(G1, week)} == {
+        (U1, U2): 1, (U2, U1): 1,
+    }
+    r.exclude_waked = False
+    assert {(a, b): c for a, b, c in r.get_group_reply_pairs(G1, week)} == {
+        (U1, U2): 2, (U2, U1): 1,
+    }
+
+
+def test_db_stats(repo):
+    """库概况（/画像维护 状态 的数据源）。"""
+    s = repo.db_stats()
+    with repo.db.connect() as conn:
+        total = int(conn.execute("SELECT COUNT(*) FROM messages").fetchone()[0])
+    assert s["total"] == total
+    assert s["by_type"]["user"] > 0 and s["by_type"]["bot"] == 1
+    # 最早行为 08-12 的坏 JSON 样本，最晚行 08-15 12:50
+    assert s["oldest"] == ts(2026, 8, 12, 12, 30)
+    assert s["newest"] == ts(2026, 8, 15, 12, 50)
 
 
 def repo_all_count(repo, week):

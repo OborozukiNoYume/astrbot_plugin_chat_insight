@@ -62,7 +62,7 @@ _PLUGIN_COMMAND_WORDS = frozenset(
     PLUGIN_NAME,
     "OborozukiNoYume",
     "聊天洞察：基于 ChatLogger 的群聊统计、发言排行、词云关键词、用户画像（只读）",
-    "0.5.1",
+    "0.5.2",
 )
 class ChatInsight(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -371,7 +371,8 @@ class ChatInsight(Star):
 
     @filter.command("发言榜", alias={"rank", "发言排行"})
     async def cmd_rank(
-        self, event: AstrMessageEvent, a: str = None, b: str = None, c: str = None
+        self, event: AstrMessageEvent, a: str | None = None, b: str | None = None,
+        c: str | None = None,
     ):
         """发言榜：/发言榜 [群 <群号>] [时间] [条数]，群内默认当前群"""
         async for r in self._rank_impl(event, [t for t in (a, b, c) if t]):
@@ -381,11 +382,11 @@ class ChatInsight(Star):
     async def cmd_wordcloud(
         self,
         event: AstrMessageEvent,
-        a: str = None,
-        b: str = None,
-        c: str = None,
-        d: str = None,
-        e: str = None,
+        a: str | None = None,
+        b: str | None = None,
+        c: str | None = None,
+        d: str | None = None,
+        e: str | None = None,
     ):
         """生成词云：/词云 [时间]（默认自己）；@某人 查他人；「全群」查整群"""
         async for r in self._wordcloud_impl(event, [t for t in (a, b, c, d, e) if t]):
@@ -394,7 +395,9 @@ class ChatInsight(Star):
     # ---------- 命令入口③：/用户画像（六视图合并，公开） ----------
 
     @filter.command("用户画像", alias={"profile"})
-    async def cmd_profile(self, event: AstrMessageEvent, a: str = None, b: str = None):
+    async def cmd_profile(
+        self, event: AstrMessageEvent, a: str | None = None, b: str | None = None
+    ):
         """完整用户画像：/用户画像 [@某人] [用户 <QQ号|我>] [时间]（查他人需管理员）"""
         try:
             svc = self._svc()
@@ -506,8 +509,8 @@ class ChatInsight(Star):
                 def _next_target() -> datetime:
                     # 时/分为 int 滑块且 0 是合法值（0 点），不可用 or 回退——会把 0 时吞成默认值
                     hhmm = (
-                        f"{int(self.config.get('report_hour', 8))}:"
-                        f"{int(self.config.get('report_minute', 0))}"
+                        f"{int(self.config.get('report_hour', 8)):02d}:"
+                        f"{int(self.config.get('report_minute', 0)):02d}"
                     )
                     return report.next_report_dt(
                         datetime.now(tz=svc.tz),
@@ -592,6 +595,10 @@ class ChatInsight(Star):
             except _USER_ERRORS as e:
                 logger.warning(f"[insight] 群报 {gid} 生成失败: {e}")
                 continue
+            except Exception as e:
+                # 单群意外异常不得中断本轮剩余群的推送
+                logger.error(f"[insight] 群报 {gid} 生成异常: {e}", exc_info=True)
+                continue
             if built is None:
                 logger.info(f"[insight] 群报 {gid} 上周活跃度低于 {min_msgs}，跳过")
                 continue
@@ -622,7 +629,8 @@ class ChatInsight(Star):
         """
         try:
             prefixes = self.context.get_config()["wake_prefix"]
-        except Exception:
+        except Exception as e:
+            logger.warning(f"[insight] 读取唤醒前缀配置失败，回退 '/': {e}")
             prefixes = ["/"]
         if isinstance(prefixes, str):
             prefixes = [prefixes]
@@ -650,18 +658,23 @@ class ChatInsight(Star):
             personal, spec, top_n = hit
             if not event.is_at_or_wake_command:
                 # 框架规则：群聊里首段 @普通人 的消息即使带唤醒前缀也不唤醒
-                # （防止抢答别人被 @ 的消息），「@某人 /词云」因此进不了命令通道。
-                # 「@某人 词云」「@某人 <唤醒前缀>词云」是明确的指向性请求，放行；
-                # 判定用配置的真实唤醒前缀剥离（前缀可变更，不硬编码）；
+                # （防止抢答别人被 @ 的消息），「@某人 /词云」因此进不了命令通道，
+                # 由这里的口语兜底放行。
+                # 「@某人 词云」「@某人 /词云」「@某人 历史词云」是明确的指向性
+                # 请求，放行；判定用配置的真实唤醒前缀剥离（前缀可变更，不硬编码）；
                 # 其余未唤醒消息一律不响应，防止日常聊天误触。
                 stripped_texts = {text, text.lower()}
                 for p in self._wake_prefixes():
                     if p and text.startswith(p):
                         s = text[len(p):].strip()
                         stripped_texts.update({s, s.lower()})
-                # 首词判定跳过 At 渲染文本：「@某人 词云」的 At 在前语序同样放行
+                # 首词判定跳过 At 渲染文本（At 在前语序）；「/词云」形态在此剥前缀
                 firsts = {colloquial.first_meaningful(t) for t in stripped_texts}
-                if not firsts & {"词云", "wordcloud"}:
+                for w in list(firsts):
+                    for p in self._wake_prefixes():
+                        if p and w.startswith(p):
+                            firsts.add(w[len(p):])
+                if not any(colloquial.is_wordcloud_lead(w) for w in firsts):
                     return
             if personal:
                 tokens = ["user", "me", spec]

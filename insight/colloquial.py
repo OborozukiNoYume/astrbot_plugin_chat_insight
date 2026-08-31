@@ -46,6 +46,19 @@ _TIME_KEYWORDS: list[tuple[re.Pattern, str]] = [
 
 _DEFAULT_SPEC = "today"
 
+# <时间词>词云 形态（如「历史词云」「本周词云」）：时间词取自 _TIME_KEYWORDS，
+# 服务「@某人 <时间>词云」口语形态的首词放行（见模块 docstring）
+_TIME_WORD_LEAD_RE = re.compile(
+    "(?:" + "|".join(p.pattern for p, _ in _TIME_KEYWORDS) + ")词云"
+)
+
+
+def is_wordcloud_lead(token: str) -> bool:
+    """首词是否为词云触发词：词云 / wordcloud / <时间词>词云（如 历史词云）。"""
+    if token in ("词云", "wordcloud"):
+        return True
+    return bool(_TIME_WORD_LEAD_RE.fullmatch(token))
+
 
 def match_wordcloud(text: str, max_len: int = 40) -> tuple[bool, str, int | None] | None:
     """识别个人词云口语说法。

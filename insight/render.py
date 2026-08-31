@@ -7,10 +7,14 @@
 
 from __future__ import annotations
 
+import logging
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
 from zoneinfo import ZoneInfo
+
+# 与 AstrBot LogManager 同名 logger：宿主环境进统一日志，独立测试零依赖
+logger = logging.getLogger("astrbot")
 
 FONT_EXTS = (".ttf", ".ttc", ".otf")
 # 系统字体探测候选（按优先级），命中名字子串即用
@@ -96,7 +100,9 @@ def render_wordcloud(
         ).generate_from_frequencies(freq)
         wc.to_file(str(out_path))
         return Path(out_path)
-    except Exception:
+    except Exception as e:
+        # 渲染异常（字体损坏/磁盘满/PIL 崩溃等）降级文本，但必须留排障线索
+        logger.warning(f"[insight] 词云渲染失败，降级文本词频: {e}")
         return None
 
 
@@ -248,9 +254,7 @@ def fmt_user_social(p: dict) -> str:
         lines.append("最常@: " + _name_list(p["at_sent"]))
     if p["at_received"]:
         lines.append(f"最常被@（近{p['at_window_days']}天）: " + _name_list(p["at_received"]))
-    elif p["scope_label"] != "全部会话":
-        pass
-    else:
+    elif p["scope_label"] == "全部会话":
         lines.append("（谁最常@你仅在群范围内统计，当前为全量范围故略）")
     if len(lines) == 1:
         lines.append("（暂无互动记录）")
