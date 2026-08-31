@@ -115,6 +115,16 @@ AstrBot → ChatLogger → chatlog.db → Chat Insight（本插件，只读）
 2. 将本目录放入（或符号链接到）`data/plugins/astrbot_plugin_chat_insight`。
 3. 若此前使用 chat_statistics / user_profile，请停用或移除它们以避免命令冲突（`/词云`、`/用户画像`（`/profile`）等命令名重叠）。
 
+### 数据备份与迁移（chatlog.db）
+
+chatlog.db 归 ChatLogger 所有（本插件只读），位于 `data/plugin_data/astrbot_plugin_chatlogger/`。换机搬运或替换数据库时：
+
+1. **先停 AstrBot 进程**再动文件——运行中复制得到的库可能缺少尚未写回的数据。
+2. **备份/外移**：把 `chatlog.db`、`chatlog.db-wal`、`chatlog.db-shm`（存在的话）**三个文件一起复制**。WAL 可能持有主库还没有的最新数据（实测优雅退出后 WAL 也未必落盘），漏掉它备份就是旧的。
+3. **替换为主**：从别处拷入新的 `chatlog.db` 后，**必须连带删掉旧的 `chatlog.db-wal` 与 `chatlog.db-shm`**——否则 SQLite 首次打开时会把残留 WAL 回放到新库上，直接损坏数据。
+4. 新库须满足 `PRAGMA user_version = 3`（与 ChatLogger 的 schema 契约）；不满足时本插件拒绝工作并提示，可先升级 ChatLogger。
+5. 重启后用 `/画像维护 状态` 验证数据源就绪（消息总数/时间跨度应与预期一致）。
+
 ## 开发
 
 ```bash
