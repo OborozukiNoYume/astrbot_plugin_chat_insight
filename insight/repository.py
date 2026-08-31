@@ -533,24 +533,6 @@ class ChatlogRepository:
         p["wake_hour_counts"] = hour_counts
         return p
 
-    def get_user_names(self, user_id) -> list[tuple[str, int, int, int]]:
-        """昵称历史（全局属性，不受 scope/时间限制）。
-        user_name 每条消息冗余存储（契约），GROUP BY 即可还原变迁；
-        全角空格 '　' 是部分平台的"空昵称"，按 NULLIF 处理。"""
-        rows = self._query(
-            """
-            SELECT NULLIF(NULLIF(user_name, ''), '　') AS name,
-                  MIN(ts), MAX(ts), COUNT(*)
-            FROM messages
-            WHERE user_id = ? AND sender_type = 'user' AND user_name IS NOT NULL
-            GROUP BY name
-            ORDER BY MIN(ts)
-            """,
-            [str(user_id)],
-        )
-        return [(n, int(a), int(b), int(c)) for n, a, b, c in rows if n]
-
-    # ---------- 群画像 ----------
 
     def get_group_meta(self, group_id) -> tuple[str, int, int, int, int]:
         """(群名, 消息量, 活跃人数, 首条, 末条)。活跃人数=有过发言的 user 身份数，

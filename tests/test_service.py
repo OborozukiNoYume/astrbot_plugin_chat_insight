@@ -34,18 +34,6 @@ def test_summary_unknown_group(service, week):
         service.summary(week, "99999")
 
 
-def test_trend_fills_zero_days(service, week):
-    days = service.trend(week, G1)
-    assert len(days) == 7
-    assert days[0].date == "2026-08-09" and days[0].messages == 0
-    assert {d.date for d in days if d.messages > 0} == {"2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15"}
-
-
-def test_hours(service, week):
-    buckets = service.hours(week, G1)
-    assert len(buckets) == 24 and sum(buckets) > 0
-
-
 def test_rank(service, week):
     entries, total = service.rank(week, G1, 10)
     assert entries[0].user_name == "三哥"
@@ -65,43 +53,12 @@ def test_keywords_user_scope(service, week):
     assert dict(pairs).get("记录") == 1
 
 
-def test_kw_trend_percentage_and_low_base(service):
-    # 今日(08-15) vs 昨日(08-14)：
-    #   AI 7 vs 6 → +16.7%；显卡 6 vs 1 → 低基数；模型 0 vs 6 → 归零
-    rows, cur, prev = service.kw_trend("today", G1, 10)
-    by_word = {w: (c, p, ch) for w, c, p, ch in rows}
-    assert by_word["AI"] == (7, 6, "+16.7%")
-    assert by_word["显卡"] == (7, 1, "低基数")
-    assert by_word["模型"] == (0, 6, "归零")
-    assert cur.label == "今日" and prev.label == "昨日"
-
-
-def test_kw_trend_new_word(service):
-    rows, _, _ = service.kw_trend("today", G1, 50)
-    by_word = {w: ch for w, _, _, ch in rows}
-    assert by_word["好文"] == "新增"  # 只在 08-15 出现（URL 消息）
-
-
-
-def test_trend_rejects_huge_range(service):
-    r = service.resolve("历史")
-    with pytest.raises(ServiceError, match="范围太长"):
-        service.trend(r, G1)
-
-
 def test_summary_history_uses_days_with_data(service):
     r = service.resolve("历史")
     s = service.summary(r, G1)
     assert s["span"] == "有记录以来"
     assert s["span_days"] == s["days_with_data"]
     assert s["messages"] > 0
-
-
-def test_kw_trend_history_rejected(service):
-    with pytest.raises(ServiceError, match="没有上一对比区间"):
-        service.kw_trend("历史", G1, 10)
-
-
 
 
 

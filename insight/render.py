@@ -175,38 +175,10 @@ def fmt_word_freq(title: str, pairs, empty_hint: str = "该范围内没有可用
     return "\n".join(lines)
 
 
-def fmt_day_trend(title: str, days) -> str:
-    if not days:
-        return title + "\n该范围内没有消息"
-    peak = max(d.messages for d in days)
-    lines = [title]
-    for d in days:
-        lines.append(
-            f"{d.date}  {bar(d.messages, peak)} {d.messages} 条 / {d.active_users} 人"
-        )
-    return "\n".join(lines)
 
 
-def fmt_hours(title: str, buckets: list[int]) -> str:
-    peak = max(buckets) if buckets else 0
-    lines = [title]
-    for row_start in (0, 8, 16):
-        cells = []
-        for h in range(row_start, row_start + 8):
-            b = bar(buckets[h], peak, width=6)
-            cells.append(f"{h:02d}时 {b}{buckets[h]}")
-        lines.append("  ".join(cells))
-    return "\n".join(lines)
 
 
-def fmt_kw_trend(title: str, rows, cur_label: str, prev_label: str) -> str:
-    """rows: [(word, cur, prev, change_str)]"""
-    lines = [title, f"关键词     {cur_label}   {prev_label}   变化"]
-    for word, cur, prev, change in rows:
-        lines.append(f"{word}  {cur}  {prev}  {change}")
-    if not rows:
-        lines.append("两个区间内都没有可用关键词")
-    return "\n".join(lines)
 
 
 # ---------- 用户画像格式化（dict 输入） ----------
@@ -322,12 +294,6 @@ def fmt_user_full(name: str, p: dict, tz: ZoneInfo) -> str:
     return "\n\n————\n\n".join(b for b in blocks if b)
 
 
-def fmt_user_names(p: dict, tz: ZoneInfo) -> str:
-    lines = [f"🏷️ 昵称历史（当前: {p['current']}，变更 {p['change_count']} 次）"]
-    for name, first, last, count in p["entries"]:
-        mark = " ←当前" if name == p["current"] else ""
-        lines.append(f"{name}｜{fmt_ts(first, tz)} ~ {fmt_ts(last, tz)}｜{count} 条{mark}")
-    return "\n".join(lines)
 
 
 def fmt_group_profile(p: dict, tz: ZoneInfo) -> str:

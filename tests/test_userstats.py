@@ -154,17 +154,6 @@ def test_user_bot_at_detection(service, all_range):
     assert p["wake_count"] == 1
 
 
-# ---------- 昵称 ----------
-
-def test_user_names(service):
-    p = service.user_names(U1)
-    assert p["current"] == "三哥"
-    assert p["change_count"] == 1
-    names = {n: (first, last, count) for n, first, last, count in p["entries"]}
-    assert names["张三"] == (ts(2026, 8, 13, 10, 0), ts(2026, 8, 13, 11, 0), 2)
-    assert names["三哥"][2] == 18
-
-
 # ---------- 群画像 ----------
 
 def test_group_profile(service):
@@ -205,8 +194,6 @@ def test_render_user_outputs(service, all_range):
     assert "互动关系" in soc and "高频互动对象" in soc
     b = render.fmt_user_bot(service.user_bot(all_range, U1, G1))
     assert "Bot 互动" in b and "私聊会话" in b
-    n = render.fmt_user_names(service.user_names(U1), service.tz)
-    assert "昵称历史" in n and "张三" in n
     g = render.fmt_group_profile(service.group_profile(G1), service.tz)
     assert "群画像" in g and "非群成员总数" in g
 

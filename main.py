@@ -54,15 +54,15 @@ _USER_ERRORS = (ServiceError, DatabaseNotAvailable, SchemaIncompatible)
 
 # 本插件命令词：带唤醒前缀/@Bot 时让命令通道处理，避免双响应
 _PLUGIN_COMMAND_WORDS = frozenset(
-    {"统计", "chatstats", "聊天统计", "发言榜", "发言排行", "rank", "词云", "wordcloud",
-     "用户画像", "profile", "昵称", "names", "群画像", "画像维护"}
+    {"发言榜", "发言排行", "rank", "词云", "wordcloud",
+     "用户画像", "profile", "群画像", "画像维护"}
 )
 
 @register(
     PLUGIN_NAME,
     "OborozukiNoYume",
     "聊天洞察：基于 ChatLogger 的群聊统计、发言排行、词云关键词、用户画像（只读）",
-    "0.4.9",
+    "0.5.0",
 )
 class ChatInsight(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -150,16 +150,6 @@ class ChatInsight(Star):
                 self._init_error or "统计服务不可用，请检查插件日志。"
             )
         return self.service
-
-    @staticmethod
-    async def _group_name(svc: StatisticsService, event: AstrMessageEvent) -> str:
-        """统计卡片头部群名；群无记录或异常时退回群号。"""
-        gid = str(event.get_group_id() or "")
-        try:
-            meta = await asyncio.to_thread(svc.repo.get_group_meta, gid)
-            return meta[0] or gid
-        except _USER_ERRORS:
-            return gid
 
     @staticmethod
     def _normalize_args(time_spec, top_n):
@@ -318,45 +308,7 @@ class ChatInsight(Star):
             self.cache.put(key, value)
         return value
 
-    # ---------- 群统计共享实现（顶层命令与 /聊天统计 组内入口共用） ----------
-
-    async def _summary_impl(self, event: AstrMessageEvent, time_spec, top_n):
-        try:
-            svc = self._svc()
-            spec, _ = self._normalize_args(time_spec, top_n)
-            r = svc.resolve(spec)
-            s = await asyncio.to_thread(svc.summary, r, event.get_group_id())
-            if self._render_mode == "image":
-                name = await self._group_name(svc, event)
-                image = await cardrender.render_summary_card(
-                    self, name, event.get_group_id(), s, svc.tz
-                )
-                if image:
-                    yield event.image_result(image)
-                    return
-            yield event.plain_result(render.fmt_summary(s))
-        except _USER_ERRORS as e:
-            yield event.plain_result(f"⚠️ {e}")
-        except Exception as e:
-            logger.error(f"[insight] summary 失败: {e}", exc_info=True)
-            yield event.plain_result("查询失败，请稍后重试（详情见日志）。")
-
-    async def _keywords_impl(self, event: AstrMessageEvent, time_spec, top_n):
-        try:
-            svc = self._svc()
-            spec, n = self._normalize_args(time_spec, top_n)
-            r = svc.resolve(spec)
-            pairs, total = await asyncio.to_thread(
-                svc.keywords, r, event.get_group_id(), None, n
-            )
-            yield event.plain_result(
-                render.fmt_word_freq(f"🔑 高频关键词 · {r.label}（{describe_span(r)}）", pairs)
-            )
-        except _USER_ERRORS as e:
-            yield event.plain_result(f"⚠️ {e}")
-        except Exception as e:
-            logger.error(f"[insight] keywords 失败: {e}", exc_info=True)
-            yield event.plain_result("查询失败，请稍后重试（详情见日志）。")
+    # ---------- 群统计共享实现（顶层命令入口共用） ----------
 
     async def _wordcloud_impl(self, event: AstrMessageEvent, tokens: list[str]):
         try:
@@ -415,102 +367,7 @@ class ChatInsight(Star):
             logger.error(f"[insight] rank 失败: {e}", exc_info=True)
             yield event.plain_result("查询失败，请稍后重试（详情见日志）。")
 
-    # ---------- 命令入口①：/聊天统计 指令组（管理员） ----------
-
-    @filter.command_group("聊天统计", alias={"统计", "chatstats"})
-    def chatstats(self):
-        pass
-
-    @chatstats.command("总览", alias={"summary"})
-    @filter.permission_type(filter.PermissionType.ADMIN)
-    async def cmd_summary(self, event: AstrMessageEvent, time_spec: str = None, top_n: int = None):
-        """群活跃度总览：/聊天统计 总览 [时间]（管理员）"""
-        async for r in self._summary_impl(event, time_spec, top_n):
-            yield r
-
-    @chatstats.command("趋势", alias={"trend"})
-    @filter.permission_type(filter.PermissionType.ADMIN)
-    async def cmd_trend(self, event: AstrMessageEvent, time_spec: str = None, top_n: int = None):
-        """按天趋势：/聊天统计 趋势 [时间]（管理员）"""
-        try:
-            svc = self._svc()
-            spec, _ = self._normalize_args(time_spec, top_n)
-            r = svc.resolve(spec)
-            days = await asyncio.to_thread(svc.trend, r, event.get_group_id())
-            if self._render_mode == "image":
-                name = await self._group_name(svc, event)
-                image = await cardrender.render_trend_card(
-                    self, name, event.get_group_id(), r.label, describe_span(r),
-                    days, svc.tz,
-                )
-                if image:
-                    yield event.image_result(image)
-                    return
-            yield event.plain_result(
-                render.fmt_day_trend(f"📈 按天趋势 · {r.label}（{describe_span(r)}）", days)
-            )
-        except _USER_ERRORS as e:
-            yield event.plain_result(f"⚠️ {e}")
-        except Exception as e:
-            logger.error(f"[insight] trend 失败: {e}", exc_info=True)
-            yield event.plain_result("查询失败，请稍后重试（详情见日志）。")
-
-    @chatstats.command("时段", alias={"hours"})
-    @filter.permission_type(filter.PermissionType.ADMIN)
-    async def cmd_hours(self, event: AstrMessageEvent, time_spec: str = None, top_n: int = None):
-        """24 小时分布：/聊天统计 时段 [时间]（管理员）"""
-        try:
-            svc = self._svc()
-            spec, _ = self._normalize_args(time_spec, top_n)
-            r = svc.resolve(spec)
-            buckets = await asyncio.to_thread(svc.hours, r, event.get_group_id())
-            if self._render_mode == "image":
-                name = await self._group_name(svc, event)
-                image = await cardrender.render_hours_card(
-                    self, name, event.get_group_id(), r.label, describe_span(r),
-                    buckets, svc.tz,
-                )
-                if image:
-                    yield event.image_result(image)
-                    return
-            yield event.plain_result(
-                render.fmt_hours(f"🕐 24 小时分布 · {r.label}（{describe_span(r)}）", buckets)
-            )
-        except _USER_ERRORS as e:
-            yield event.plain_result(f"⚠️ {e}")
-        except Exception as e:
-            logger.error(f"[insight] hours 失败: {e}", exc_info=True)
-            yield event.plain_result("查询失败，请稍后重试（详情见日志）。")
-
-    @chatstats.command("关键词", alias={"keywords"})
-    @filter.permission_type(filter.PermissionType.ADMIN)
-    async def cmd_keywords(self, event: AstrMessageEvent, time_spec: str = None, top_n: int = None):
-        """群高频关键词：/聊天统计 关键词 [时间] [N]（管理员）"""
-        async for r in self._keywords_impl(event, time_spec, top_n):
-            yield r
-
-    @chatstats.command("关键词趋势", alias={"kw-trend"})
-    @filter.permission_type(filter.PermissionType.ADMIN)
-    async def cmd_kw_trend(self, event: AstrMessageEvent, time_spec: str = None):
-        """关键词趋势：/聊天统计 关键词趋势 [时间]（管理员），当前区间 vs 上一区间"""
-        try:
-            svc = self._svc()
-            spec, _ = self._normalize_args(time_spec, None)
-            rows, cur, prev = await asyncio.to_thread(
-                svc.kw_trend, spec, event.get_group_id(), None
-            )
-            yield event.plain_result(
-                render.fmt_kw_trend(
-                    f"📈 关键词趋势 · {cur.label} vs {prev.label}", rows, cur.label, prev.label
-                )
-            )
-        except _USER_ERRORS as e:
-            yield event.plain_result(f"⚠️ {e}")
-        except Exception as e:
-            logger.error(f"[insight] kw-trend 失败: {e}", exc_info=True)
-            yield event.plain_result("查询失败，请稍后重试（详情见日志）。")
-
-    # ---------- 命令入口②③：/发言排行 与 /词云（公开） ----------
+    # ---------- 命令入口①②：/发言排行 与 /词云（公开） ----------
 
     @filter.command("发言榜", alias={"rank", "发言排行"})
     async def cmd_rank(
@@ -534,7 +391,7 @@ class ChatInsight(Star):
         async for r in self._wordcloud_impl(event, [t for t in (a, b, c, d, e) if t]):
             yield r
 
-    # ---------- 命令入口④：/用户画像（六视图合并） 与 /昵称（公开） ----------
+    # ---------- 命令入口③：/用户画像（六视图合并，公开） ----------
 
     @filter.command("用户画像", alias={"profile"})
     async def cmd_profile(self, event: AstrMessageEvent, a: str = None, b: str = None):
@@ -558,24 +415,6 @@ class ChatInsight(Star):
             yield event.plain_result(f"⚠️ {e}")
         except Exception as e:
             logger.error(f"[insight] 用户画像失败: {e}", exc_info=True)
-            yield event.plain_result("查询失败，请稍后重试（详情见日志）。")
-
-    @filter.command("昵称", alias={"names"})
-    async def cmd_names(self, event: AstrMessageEvent, a: str = None, b: str = None):
-        """昵称历史：/昵称 [@某人]（全局属性，不受群范围限制，查他人需管理员）"""
-        try:
-            svc = self._svc()
-            ctx, err = await self._prepare_user(event, [t for t in (a, b) if t])
-            if err:
-                yield event.plain_result(err)
-                return
-            uid, _gid, _r = ctx
-            p = await self._build_user("names", "user_names", uid)
-            yield event.plain_result(render.fmt_user_names(p, svc.tz))
-        except _USER_ERRORS as e:
-            yield event.plain_result(f"⚠️ {e}")
-        except Exception as e:
-            logger.error(f"[insight] 昵称失败: {e}", exc_info=True)
             yield event.plain_result("查询失败，请稍后重试（详情见日志）。")
 
     # ---------- 群画像（公开，仅群聊） ----------

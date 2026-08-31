@@ -17,7 +17,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 from . import render, textproc
-from .repository import ChatlogRepository, DayActivity, MediaStats, RankEntry
+from .repository import ChatlogRepository, MediaStats, RankEntry
 from .timeutil import (
     TimeRange,
     TimeRangeError,
@@ -34,7 +34,6 @@ class ServiceError(Exception):
 _LONG_THRESHOLD = 100
 _SHORT_THRESHOLD = 10
 # 关键词趋势低基数阈值：任一侧计数低于该值时不给百分比，只给基数
-_LOW_BASE = 5
 # 用户行为口径常量
 BURST_GAP_SECONDS = 120  # 相邻消息间隔小于该值视为同一轮发言
 DAY_HOURS = range(6, 18)  # 06:00–17:59 白天，其余夜间
@@ -195,32 +194,6 @@ class StatisticsService:
             "span_days": days,
         }
 
-    # 按天趋势一次输出最多约一个季度，再长消息不可读
-    _MAX_TREND_DAYS = 92
-
-    def trend(self, r: TimeRange, group_id) -> list:
-        """按天趋势，空白天补零。"""
-        gid = self._require_group(group_id)
-        span_days = (r.end_ts - r.start_ts) // 86400
-        if span_days > self._MAX_TREND_DAYS:
-            raise ServiceError(
-                f"「{r.label}」范围太长（{span_days} 天），趋势最多支持约一个季度；"
-                "长期趋势请看 `/聊天统计 关键词趋势 今年` 或分段查询。"
-            )
-        by_day = self.repo.get_activity_by_day(r, gid, offset_seconds=self._off(r))
-        index = {d.date: d for d in by_day}
-        filled: list = []
-        cur = r.start_ts
-        while cur < r.end_ts:
-            d = datetime.fromtimestamp(cur, self.tz).strftime("%Y-%m-%d")
-            filled.append(index.get(d, DayActivity(date=d, messages=0, active_users=0)))
-            cur += 86400
-        return filled
-
-    def hours(self, r: TimeRange, group_id) -> list[int]:
-        gid = self._require_group(group_id)
-        return self.repo.get_activity_by_hour(r, gid, offset_seconds=self._off(r))
-
     def rank(self, r: TimeRange, group_id, top_n: int | None = None) -> tuple[list[RankEntry], int]:
         gid = self._require_group(group_id)
         n = top_n or self.default_top_n
@@ -276,40 +249,6 @@ class StatisticsService:
                 except OSError:
                     pass
         return image_path, pairs, sum(counter.values())
-
-    # ---------- 群统计：关键词趋势 ----------
-
-    def kw_trend(self, spec: str | None, group_id, top_n: int | None = None):
-        """当前区间 vs 紧邻上一区间。低基数（任一侧 < 5 次）只展示次数，不算百分比。"""
-        gid = self._require_group(group_id)
-        cur = self.resolve(spec)
-        try:
-            prev = cur.previous()
-        except TimeRangeError as e:
-            raise ServiceError(str(e)) from e
-        cur_counter = self._keywords(cur, group_id=gid)
-        prev_counter = self._keywords(prev, group_id=gid)
-        if not cur_counter and not prev_counter:
-            raise ServiceError("两个区间内都没有可统计的文本关键词。")
-        candidates = set()
-        for word, c in cur_counter.most_common(top_n or self.default_top_n):
-            candidates.add(word)
-        for word, c in prev_counter.most_common(top_n or self.default_top_n):
-            candidates.add(word)
-        rows = []
-        for word in candidates:
-            c, p = cur_counter.get(word, 0), prev_counter.get(word, 0)
-            if p == 0 and c > 0:
-                change = "新增"
-            elif c == 0 and p > 0:
-                change = "归零"
-            elif c < _LOW_BASE or p < _LOW_BASE:
-                change = "低基数"
-            else:
-                change = f"{(c - p) / p * 100:+.1f}%"
-            rows.append((word, c, p, change))
-        rows.sort(key=lambda x: (-(x[1] + x[2]), x[0]))
-        return rows, cur, prev
 
     # ==================== 用户画像 ====================
 
@@ -480,20 +419,6 @@ class StatisticsService:
         p["span"] = describe_span(r)
         p["scope_label"] = f"群 {group_id}" if group_id else "全部会话"
         return p
-
-    def user_names(self, user_id) -> dict:
-        """昵称历史：只报使用时间线事实，不推断含义（全局属性，不受 scope/时间限制）。"""
-        uid = self._require_user(user_id)
-        rows = self.repo.get_user_names(uid)
-        if not rows:
-            raise ServiceError(f"用户 {uid} 在 ChatLogger 中没有昵称记录。")
-        current = max(rows, key=lambda e: e[2])
-        return {
-            "user_id": uid,
-            "current": current[0],
-            "entries": rows,
-            "change_count": max(0, len(rows) - 1),
-        }
 
     def user_full(self, r: TimeRange, user_id, group_id=None) -> dict:
         """完整画像：六视图合一（综合/活跃/关键词/风格/互动/机器人）。
