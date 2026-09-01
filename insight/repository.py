@@ -18,9 +18,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from datetime import date, datetime, timedelta
 
 from .db import ChatlogDB
-from .timeutil import TimeRange, day_bucket_to_date
+from .timeutil import TimeRange
 
 # media_flags 位掩码（QUERY_GUIDE 契约）：1图片 2语音 4视频 8At 16表情 32回复 64文件
 MEDIA_BITS = {
@@ -35,6 +36,10 @@ MEDIA_BITS = {
 
 # json_each 查询的公共防护：content_json 非空且合法
 _JSON_OK = "content_json IS NOT NULL AND json_valid(content_json)"
+
+# 昵称规范化：剥离首尾全角/ASCII 空白后为空串则视为无名（QQ 空名片存 ''/空白），
+# 统一走「查无有效名 → 回退更旧昵称或裸 ID」，防止三条取名的路径口径漂移
+_NAME_NORM = "NULLIF(TRIM(TRIM(user_name, '　')), '')"
 
 
 @dataclass
@@ -114,8 +119,7 @@ class ChatlogRepository:
             chunk = ids[i : i + 100]
             ph = ",".join("?" * len(chunk))
             rows = self._query(
-                f"SELECT user_id, NULLIF(NULLIF(user_name, ''), '　') "
-                f"FROM users WHERE user_id IN ({ph})",
+                f"SELECT user_id, {_NAME_NORM} FROM users WHERE user_id IN ({ph})",
                 chunk,
             )
             for uid, name in rows:
@@ -125,32 +129,35 @@ class ChatlogRepository:
         for i in range(0, len(missing), 100):
             chunk = missing[i : i + 100]
             ph = ",".join("?" * len(chunk))
-            # SQLite 裸列 + MAX 的组合保证取到 ts 最大那一行的 user_name
+            # SQLite 裸列 + MAX 的组合保证取到 ts 最大那一行的 user_name；
+            # 空白名片在分组前过滤（否则最新一条是空白名会盖掉更旧的有效昵称）
             rows = self._query(
-                f"SELECT user_id, NULLIF(NULLIF(user_name, ''), '　'), MAX(ts) "
-                f"FROM messages WHERE user_id IN ({ph}) GROUP BY user_id",
+                f"SELECT user_id, user_name, MAX(ts) FROM messages "
+                f"WHERE user_id IN ({ph}) AND {_NAME_NORM} IS NOT NULL GROUP BY user_id",
                 chunk,
             )
             for uid, name, _ts in rows:
                 if name:
-                    out[str(uid)] = name
+                    out[str(uid)] = name.strip("　").strip() or str(uid)
         for uid in ids:
             out.setdefault(uid, uid)
         return out
 
     def get_display_name(self, user_id, group_id=None) -> str:
-        """用户最新昵称（群维度优先），无记录时回退为 ID。"""
+        """用户最新有效昵称（群维度优先，空白名片视为无名跳过），无则回退 ID。"""
         if group_id is not None:
             row = self._query(
-                "SELECT user_name FROM messages WHERE user_id = ? AND group_id = ? "
-                "AND sender_type = 'user' AND user_name IS NOT NULL "
+                f"SELECT {_NAME_NORM} FROM messages WHERE user_id = ? AND group_id = ? "
+                "AND sender_type = 'user' "
+                f"AND {_NAME_NORM} IS NOT NULL "
                 "ORDER BY ts DESC LIMIT 1",
                 [str(user_id), str(group_id)],
             )
         else:
             row = self._query(
-                "SELECT user_name FROM messages WHERE user_id = ? "
-                "AND sender_type = 'user' AND user_name IS NOT NULL "
+                f"SELECT {_NAME_NORM} FROM messages WHERE user_id = ? "
+                "AND sender_type = 'user' "
+                f"AND {_NAME_NORM} IS NOT NULL "
                 "ORDER BY ts DESC LIMIT 1",
                 [str(user_id)],
             )
@@ -213,13 +220,15 @@ class ChatlogRepository:
         )
         return int(row[0][0])
 
-    def get_message_rank(self, r: TimeRange, group_id, limit: int = 10) -> list[RankEntry]:
-        """群内发言排行。昵称取该用户范围内最新一条消息的 user_name
-        （SQLite 裸列 + MAX(ts) 语义：返回最大值所在行的其他列）。"""
+    def get_message_rank(self, r: TimeRange, group_id, limit: int = 10) -> tuple[list[RankEntry], int]:
+        """群内发言排行，返回 (条目, 范围内消息总数)。昵称取该用户范围内最新一条
+        消息的 user_name（SQLite 裸列 + MAX(ts) 语义：返回最大值所在行的其他列）。
+        总数用 COUNT(*) OVER () 与条目同查询取得——短连接下分两次查询
+        会被并发写入插入快照裂缝，占比可能分母先于分子。"""
         where, params = self._where(r, group_id)
         rows = self._query(
             f"""
-            SELECT user_id, COUNT(*) AS c, MAX(ts), user_name
+            SELECT user_id, COUNT(*) AS c, MAX(ts), {_NAME_NORM}, SUM(COUNT(*)) OVER () AS total
             FROM messages WHERE {where}
             GROUP BY user_id
             ORDER BY c DESC, user_id
@@ -227,9 +236,10 @@ class ChatlogRepository:
             """,
             params + [limit],
         )
-        total = self.get_message_count(r, group_id=group_id)
+        # SUM(COUNT(*)) OVER ()：窗口在 GROUP BY 之后求值，COUNT(*) OVER () 数的是分组数
+        total = int(rows[0][4]) if rows else 0
         entries = []
-        for user_id, c, _, name in rows:
+        for user_id, c, _, name, _total in rows:
             entries.append(
                 RankEntry(
                     user_id=str(user_id),
@@ -238,52 +248,69 @@ class ChatlogRepository:
                     ratio=(int(c) / total) if total else 0.0,
                 )
             )
-        return entries
+        return entries, total
 
     # ---------- 活跃度趋势（群与用户共用聚合形态） ----------
 
     def get_activity_by_day(
-        self, r: TimeRange, group_id=None, user_id=None, offset_seconds: int = 0,
-        waked: bool | None = None,
+        self, r: TimeRange, group_id=None, user_id=None, waked: bool | None = None,
     ) -> list[DayActivity]:
-        """按本地自然日聚合消息量（与活跃用户数，仅群维度时有意义）。天桶 = (ts+off)//86400。"""
+        """按本地自然日聚合消息量与活跃用户数（仅群维度时有意义）。
+
+        天归属按 15 分钟 epoch 桶在 Python 侧映射（DST 切换日天数是 23/25 小时，
+        「区间起点偏移 + ts 整除」会把切换日之后的消息整体记错天）。
+        群维度的活跃人数需按本地日窗口精确去重，仅对有数据的日期逐日查询。
+        """
         where, params = self._where(r, group_id, user_id, waked=waked)
-        rows = self._query(
-            f"""
-            SELECT CAST((ts + ?) / 86400 AS INTEGER) AS d,
-                   COUNT(*) AS c, COUNT(DISTINCT user_id) AS u
-            FROM messages WHERE {where}
-            GROUP BY d ORDER BY d
-            """,
-            [offset_seconds] + params,
-        )
         tz = r.tz
-        return [
-            DayActivity(
-                date=day_bucket_to_date(int(d), tz, offset_seconds),
-                messages=int(c),
-                active_users=int(u),
+        rows = self._query(
+            f"SELECT CAST(ts / 900 AS INTEGER) AS q, COUNT(*) AS c "
+            f"FROM messages WHERE {where} GROUP BY q",
+            params,
+        )
+        per_day: dict[str, int] = {}
+        for q, c in rows:
+            d = datetime.fromtimestamp(int(q) * 900, tz).date().isoformat()
+            per_day[d] = per_day.get(d, 0) + int(c)
+        out: list[DayActivity] = []
+        for d in sorted(per_day):
+            if user_id is not None:
+                out.append(DayActivity(date=d, messages=per_day[d], active_users=1))
+                continue
+            day = datetime.combine(
+                date.fromisoformat(d), datetime.min.time(), tzinfo=tz
             )
-            for d, c, u in rows
-        ]
+            s = int(day.timestamp())
+            e = int((day + timedelta(days=1)).timestamp())
+            u = self._query(
+                f"SELECT COUNT(DISTINCT user_id) FROM messages "
+                f"WHERE {where} AND ts >= ? AND ts < ?",
+                [*params, s, e],
+            )[0][0]
+            out.append(DayActivity(date=d, messages=per_day[d], active_users=int(u)))
+        return out
 
     def get_activity_by_hour(
-        self, r: TimeRange, group_id=None, user_id=None, offset_seconds: int = 0,
-        waked: bool | None = None,
+        self, r: TimeRange, group_id=None, user_id=None, waked: bool | None = None,
     ) -> list[int]:
-        """24 小时消息量分布（本地时区），返回长度 24 的列表。"""
+        """24 小时消息量分布（本地时区），返回长度 24 的列表。
+
+        按 15 分钟 epoch 桶聚合后在 Python 侧映射本地小时：现实时区偏移均为
+        15 分钟的整数倍，epoch 对齐的季刻桶不会跨本地小时，DST 切换前后各自落位。
+        """
         where, params = self._where(r, group_id, user_id, waked=waked)
         rows = self._query(
             f"""
-            SELECT CAST((ts + ?) % 86400 / 3600 AS INTEGER) AS h, COUNT(*) AS c
+            SELECT CAST(ts / 900 AS INTEGER) AS q, COUNT(*) AS c
             FROM messages WHERE {where}
-            GROUP BY h
+            GROUP BY q
             """,
-            [offset_seconds] + params,
+            params,
         )
         buckets = [0] * 24
-        for h, c in rows:
-            buckets[int(h)] = int(c)
+        for q, c in rows:
+            h = datetime.fromtimestamp(int(q) * 900, r.tz).hour
+            buckets[h] += int(c)
         return buckets
 
     # ---------- 词云 / 关键词取文本 ----------
@@ -320,21 +347,35 @@ class ChatlogRepository:
     # ==================== 用户画像（行为统计不排除唤醒消息） ====================
 
     def get_user_basic(
-        self, r: TimeRange, user_id, group_id=None, offset_seconds: int = 0
+        self, r: TimeRange, user_id, group_id=None
     ) -> dict:
-        """基础画像：首末发言/消息量/文本量/活跃天数/均长/最长。
-        活跃天数用 SQL 天桶去重，不拉全量 ts。"""
+        """基础画像：首末发言/消息量/文本量/活跃天数/跨度。
+        活跃天数与跨度按本地自然日（墙钟）计——秒差整除在 DST 切换上会少/多算一天。"""
         where, params = self._where(r, group_id, user_id, waked=False)
         row = self._query(
             f"""
             SELECT MIN(ts), MAX(ts), COUNT(*),
-                   SUM(CASE WHEN content != '' THEN 1 ELSE 0 END),
-                   COUNT(DISTINCT CAST((ts + ?) / 86400 AS INTEGER))
+                   SUM(CASE WHEN content != '' THEN 1 ELSE 0 END)
             FROM messages WHERE {where}
             """,
-            [offset_seconds] + params,
+            params,
         )[0]
-        first, last, count, text_count, active_days = row
+        first, last, count, text_count = row
+        tz = r.tz
+        if first:
+            quarters = self._query(
+                f"SELECT DISTINCT CAST(ts / 900 AS INTEGER) AS q FROM messages WHERE {where}",
+                params,
+            )
+            active_days = len({
+                datetime.fromtimestamp(int(q) * 900, tz).date() for (q,) in quarters
+            })
+        else:
+            active_days = 0
+        span_days = (
+            (datetime.fromtimestamp(last, tz).date()
+             - datetime.fromtimestamp(first, tz).date()).days + 1
+        ) if first and last else 0
         # 活跃群数是用户的全局属性，不受 scope 限制
         active_groups = self._query(
             "SELECT COUNT(DISTINCT group_id) FROM messages "
@@ -346,24 +387,18 @@ class ChatlogRepository:
             "last_seen": last,
             "message_count": int(count or 0),
             "text_message_count": int(text_count or 0),
-            "active_days": int(active_days or 0),
+            "active_days": active_days,
             "active_groups": int(active_groups or 0),
-            "span_days": (int((last - first) / 86400) + 1) if first and last else 0,
+            "span_days": span_days,
         }
 
     def get_user_activity(
-        self, r: TimeRange, user_id, group_id=None, offset_seconds: int = 0
+        self, r: TimeRange, user_id, group_id=None
     ) -> dict:
         """活跃规律原料：24 小时分布 + 按天 (date, count) 列表（量级=活跃天数）。
         周几分布与连续活跃由 service 从日期列表计算。行为统计不排除唤醒消息。"""
-        hours = self.get_activity_by_hour(
-            r, group_id=group_id, user_id=user_id, offset_seconds=offset_seconds,
-            waked=False,
-        )
-        by_day = self.get_activity_by_day(
-            r, group_id=group_id, user_id=user_id, offset_seconds=offset_seconds,
-            waked=False,
-        )
+        hours = self.get_activity_by_hour(r, group_id=group_id, user_id=user_id, waked=False)
+        by_day = self.get_activity_by_day(r, group_id=group_id, user_id=user_id, waked=False)
         return {"hour_counts": hours, "by_day": [(d.date, d.messages) for d in by_day]}
 
     def get_user_style(
@@ -435,7 +470,7 @@ class ChatlogRepository:
             FROM (SELECT content_json FROM messages WHERE {where}) m,
                  json_each(m.content_json) seg
             WHERE json_extract(seg.value, '$.t') = 'at'
-                  AND qq IS NOT NULL AND qq != '' AND qq != ?
+                  AND qq IS NOT NULL AND qq != '' AND qq != 'all' AND qq != ?
             GROUP BY 1 ORDER BY c DESC LIMIT 10
             """,
             params + [uid],
@@ -456,15 +491,15 @@ class ChatlogRepository:
                  json_each(m.content_json) seg
             WHERE json_extract(seg.value, '$.t') = 'at'
                   AND CAST(json_extract(seg.value, '$.qq') AS TEXT) = ?
+                  AND m.user_id != ?
             GROUP BY 1 ORDER BY c DESC LIMIT 10
             """,
-            [str(group_id), cutoff, r.end_ts, str(user_id)],
+            [str(group_id), cutoff, r.end_ts, str(user_id), str(user_id)],
         )
         return [(str(u), int(c)) for u, c in rows]
 
     def get_user_bot_interaction(
         self, r: TimeRange, user_id, group_id=None, bot_ids: set[str] | None = None,
-        offset_seconds: int = 0,
     ) -> dict:
         """Bot 互动画像。私聊统计恒为全局口径（私聊本身即与 Bot 的对话），
         群内唤醒统计受 scope 限制。"""
@@ -522,15 +557,16 @@ class ChatlogRepository:
             )[0][0]
         wake_hours = self._query(
             f"""
-            SELECT CAST((ts + ?) % 86400 / 3600 AS INTEGER) AS h, COUNT(*) c
+            SELECT CAST(ts / 900 AS INTEGER) AS q, COUNT(*) c
             FROM messages WHERE {wake_where}
-            GROUP BY h
+            GROUP BY q
             """,
-            [offset_seconds] + wake_params,
+            wake_params,
         )
         hour_counts = [0] * 24
-        for h, c in wake_hours:
-            hour_counts[int(h)] = int(c)
+        for q, c in wake_hours:
+            h = datetime.fromtimestamp(int(q) * 900, r.tz).hour
+            hour_counts[h] += int(c)
         p["wake_hour_counts"] = hour_counts
         return p
 

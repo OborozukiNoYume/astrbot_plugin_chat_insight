@@ -49,7 +49,11 @@ class ChatlogDB:
 
     @contextmanager
     def connect(self):
-        conn = sqlite3.connect(f"file:{self.path}?mode=ro", uri=True, timeout=5.0)
+        # as_uri() 自带百分号编码：路径含 ?/#/空格时手拼 file: URI 会被截断，
+        # 误报 user_version=0（把路径问题伪装成 schema 契约问题）
+        conn = sqlite3.connect(
+            f"{self.path.resolve().as_uri()}?mode=ro", uri=True, timeout=5.0
+        )
         try:
             yield conn
         finally:

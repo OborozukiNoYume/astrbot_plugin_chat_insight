@@ -5,7 +5,7 @@ import pytest
 from conftest import BOT, G1, G2, NOW, TZ, U1, U2, build_db, ts
 from insight.db import ChatlogDB, DatabaseNotAvailable, SchemaIncompatible
 from insight.repository import ChatlogRepository
-from insight.timeutil import resolve_range, tz_offset_seconds
+from insight.timeutil import resolve_range
 
 
 @pytest.fixture
@@ -36,13 +36,15 @@ def test_active_user_count(repo, week):
 
 
 def test_rank_order_and_latest_name(repo, week):
-    entries = repo.get_message_rank(week, group_id=G1, limit=10)
+    entries, total = repo.get_message_rank(week, group_id=G1, limit=10)
     assert entries[0].user_id == U1
     # 昵称取范围内最新一条（张三→三哥）
     assert entries[0].user_name == "三哥"
     counts = [e.count for e in entries]
     assert counts == sorted(counts, reverse=True)
-    assert sum(e.count for e in entries) == repo.get_message_count(week, group_id=G1)
+    # 总数与条目同查询返回（窗口函数），口径与单独计数一致
+    assert total == repo.get_message_count(week, group_id=G1)
+    assert sum(e.count for e in entries) == total
     assert 0 < entries[0].ratio < 1
 
 
@@ -53,8 +55,7 @@ def test_rank_by_user_filter(repo, week):
 
 
 def test_activity_by_day(repo, week):
-    off = tz_offset_seconds(TZ, week.start_ts)
-    days = repo.get_activity_by_day(week, group_id=G1, offset_seconds=off)
+    days = repo.get_activity_by_day(week, group_id=G1)
     by_date = {d.date: d for d in days}
     assert set(by_date) == {"2026-08-12", "2026-08-13", "2026-08-14", "2026-08-15"}
     assert by_date["2026-08-13"].active_users == 1
@@ -62,8 +63,7 @@ def test_activity_by_day(repo, week):
 
 
 def test_activity_by_hour(repo, week):
-    off = tz_offset_seconds(TZ, week.start_ts)
-    buckets = repo.get_activity_by_hour(week, group_id=G1, offset_seconds=off)
+    buckets = repo.get_activity_by_hour(week, group_id=G1)
     assert len(buckets) == 24
     assert buckets[10] > 0  # 08-15 10:00+08 有多条
     assert buckets[23] > 0  # 08-14 23:00+08
@@ -176,4 +176,126 @@ def test_empty_database(tmp_path):
     r = ChatlogRepository(ChatlogDB(p))
     week = resolve_range("7天", TZ, now_ts=NOW)
     assert r.get_message_count(week, group_id=G1) == 0
-    assert r.get_activity_by_day(week, group_id=G1, offset_seconds=28800) == []
+    assert r.get_activity_by_day(week, group_id=G1) == []
+    assert r.get_activity_by_hour(week, group_id=G1) == [0] * 24
+
+
+# ---------- DST 时区：桶按本地墙钟落位，不随区间起点偏移漂移 ----------
+
+def _dst_rows():
+    """纽约时区 2026-03-08 春令时（02:00 EST→EDT）前后各一条本地消息。"""
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    ny = ZoneInfo("America/New_York")
+
+    def m(n, y, mo, d, h, mi=0):
+        t = int(datetime(y, mo, d, h, mi, tzinfo=ny).timestamp())
+        return (
+            f"dst{n}", "test", "group", f"test:GroupMessage:{G1}", G1, U1, "甲",
+            "user", 0, "m", '[{"t":"plain","x":"m"}]', 0, None, None, t, t,
+        )
+
+    return [
+        m(1, 2026, 3, 7, 23, 30),   # 切换前（EST，-5）
+        m(2, 2026, 3, 9, 0, 30),    # 切换后（EDT，-4）：本地零点后
+        m(3, 2026, 3, 9, 12, 0),    # 切换后正午
+    ]
+
+
+def test_dst_day_and_hour_buckets(tmp_path):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    from insight.timeutil import TimeRange
+
+    ny = ZoneInfo("America/New_York")
+    r = ChatlogRepository(ChatlogDB(build_db(tmp_path / "dst.db", rows=_dst_rows())))
+    rng = TimeRange(
+        int(datetime(2026, 3, 6, tzinfo=ny).timestamp()),
+        int(datetime(2026, 3, 11, tzinfo=ny).timestamp()),
+        ny, "测试区间", "ndays",
+    )
+    days = {d.date: d.messages for d in r.get_activity_by_day(rng, group_id=G1)}
+    # 旧实现按区间起点 EST 偏移整除：03-09 00:30 会被记到 03-08 的 23 时
+    assert days == {"2026-03-07": 1, "2026-03-09": 2}
+    buckets = r.get_activity_by_hour(rng, group_id=G1)
+    assert buckets[0] == 1 and buckets[12] == 1 and buckets[23] == 1
+
+
+# ---------- 昵称空白（QQ 空名片）：三条取名路径不再各自为政 ----------
+
+def _blank_name_rows():
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    tz = ZoneInfo("Asia/Shanghai")
+
+    def m(n, user, name, day):
+        t = int(datetime(2026, 8, day, 10, 0, tzinfo=tz).timestamp())
+        return (
+            f"bk{n}", "test", "group", f"test:GroupMessage:{G1}", G1, user, name,
+            "user", 0, "x", '[{"t":"plain","x":"x"}]', 0, None, None, t, t,
+        )
+
+    return [
+        # 555：旧名「赵六」，最新一条空串
+        m(1, "555", "赵六", 10), m(2, "555", "", 14),
+        # 666：旧名「钱七」，最新一条全角空格
+        m(3, "666", "钱七", 10), m(4, "666", "　", 14),
+        # 777：旧名「孙八」，最新一条 ASCII 空格
+        m(5, "777", "孙八", 10), m(6, "777", " ", 14),
+    ]
+
+
+def test_blank_names_fall_back_consistently(tmp_path):
+    r = ChatlogRepository(ChatlogDB(build_db(tmp_path / "blank.db", rows=_blank_name_rows())))
+    rng = resolve_range("历史", TZ, now_ts=NOW)
+    # 显示名/互动名：跳过空白名片，回退更旧的有效昵称
+    assert r.get_display_name("555", G1) == "赵六"
+    names = r.resolve_names(["555", "666", "777"])
+    assert names == {"555": "赵六", "666": "钱七", "777": "孙八"}
+    # 发言榜：范围内最新一条是空白名片 → 回退裸 QQ 号，绝不渲染空白名
+    entries, _total = r.get_message_rank(rng, group_id=G1, limit=10)
+    by_uid = {e.user_id: e.user_name for e in entries}
+    assert by_uid == {"555": "555", "666": "666", "777": "777"}
+
+
+# ---------- @网络语义：@全体成员不是目标；被@不含自@ ----------
+
+def test_at_sent_excludes_all(tmp_path):
+    import json as json_mod
+
+    content = json_mod.dumps(
+        [{"t": "at", "qq": U2}, {"t": "at", "qq": U2},
+         {"t": "at", "qq": "all"}, {"t": "plain", "x": "看"}],
+        ensure_ascii=False,
+    )
+    t = ts(2026, 8, 15, 10, 0)
+    rows = [(
+        "at1", "test", "group", f"test:GroupMessage:{G1}", G1, U1, "甲",
+        "user", 0, "看", content, 8, None, None, t, t,
+    )]
+    r = ChatlogRepository(ChatlogDB(build_db(tmp_path / "at.db", rows=rows)))
+    rng = resolve_range("7天", TZ, now_ts=NOW)
+    assert r.get_user_at_sent(rng, U1, G1) == {U2: 2}  # @全体成员不进榜
+
+
+def test_at_received_excludes_self(tmp_path):
+    import json as json_mod
+
+    def at_msg(n, sender, target_qq):
+        content = json_mod.dumps([{"t": "at", "qq": target_qq}], ensure_ascii=False)
+        t = ts(2026, 8, 15, 11, n)
+        return (
+            f"ar{n}", "test", "group", f"test:GroupMessage:{G1}", G1, sender, sender,
+            "user", 0, "", content, 8, None, None, t, t,
+        )
+
+    rows = [
+        at_msg(1, U1, U1),  # u1 @自己：不应进「谁最常@我」
+        at_msg(2, U2, U1),  # u2 @u1：应进
+    ]
+    r = ChatlogRepository(ChatlogDB(build_db(tmp_path / "ar.db", rows=rows)))
+    rng = resolve_range("7天", TZ, now_ts=NOW)
+    assert r.get_user_at_received(rng, U1, G1) == [(U2, 1)]

@@ -107,6 +107,7 @@
     <div class="hd-times">统计区间 {{ span }}</div>
   </div>
 
+  {% if stats %}
   <div class="stats">
     {% for s in stats %}
     <div class="stat">
@@ -121,6 +122,7 @@
   <div class="section">
     <div class="overview-line">区间内有记录 <b>{{ days_with_data }}</b>；峰值日 <b>{{ peak_date }}</b> 达 <b>{{ peak_value }}</b> 条</div>
   </div>
+  {% endif %}
   {% endif %}
 
   {% if rank_rows %}

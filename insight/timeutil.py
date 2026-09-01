@@ -159,17 +159,6 @@ def _quarter_start(dt: datetime) -> datetime:
     return dt.replace(day=1, month=qm)
 
 
-def tz_offset_seconds(tz: ZoneInfo, at_ts: int) -> int:
-    """指定时刻的 UTC 偏移秒数，供 SQL 天/小时桶换算（(ts+off)//86400）。"""
-    return int(datetime.fromtimestamp(at_ts, tz).utcoffset().total_seconds())
-
-
-def day_bucket_to_date(bucket: int, tz: ZoneInfo, offset_seconds: int) -> str:
-    """把 SQL 天桶还原为本地日期字符串 YYYY-MM-DD。"""
-    epoch = bucket * 86400 - offset_seconds
-    return datetime.fromtimestamp(epoch, tz).strftime("%Y-%m-%d")
-
-
 def describe_span(r: TimeRange) -> str:
     if getattr(r, "kind", "") == "all":
         return "有记录以来"

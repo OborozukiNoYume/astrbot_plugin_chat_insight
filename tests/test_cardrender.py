@@ -276,6 +276,18 @@ def test_build_report_card_data_skips_ranks_section(service):
     assert data["rank_rows"] == []
 
 
+def test_build_report_card_data_respects_summary_toggle(service):
+    """取消勾选「总览」后卡片不再渲染统计区——与文本路径同一分节语义。"""
+    from jinja2 import Environment
+
+    data = cardrender.build_report_card_data(service, G1, ("rank",), None, 0, "daily")
+    assert "stats" not in data and "peak_date" not in data and "days_with_data" not in data
+    html = Environment(autoescape=False).from_string(
+        cardrender.load_template("report_card")
+    ).render(data)
+    assert "峰值日" not in html and "发言榜" in html  # 模板守卫生效，榜单正常
+
+
 def test_build_report_card_data_silent_group(service):
     assert cardrender.build_report_card_data(
         service, G1, ALL_SECTIONS, None, min_messages=10_000, frequency="daily"

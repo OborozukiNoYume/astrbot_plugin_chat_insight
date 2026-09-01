@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 import logging
+import os
 from collections import Counter
 from datetime import datetime
 from pathlib import Path
@@ -98,11 +99,20 @@ def render_wordcloud(
             max_words=min(max_words, len(freq)),
             random_state=42,
         ).generate_from_frequencies(freq)
-        wc.to_file(str(out_path))
+        # 文件名按区间确定（供自动清理识别），写入必须原子落位：
+        # 同（群,用户,区间）并发生成共写同一路径，直接 to_file 会让读取方拿到半截 PNG。
+        # 临时名保留 .png 后缀——wordcloud 按扩展名选图片编码器
+        tmp = out_path.with_suffix(".tmp.png")
+        wc.to_file(str(tmp))
+        os.replace(tmp, out_path)
         return Path(out_path)
     except Exception as e:
         # 渲染异常（字体损坏/磁盘满/PIL 崩溃等）降级文本，但必须留排障线索
         logger.warning(f"[insight] 词云渲染失败，降级文本词频: {e}")
+        try:
+            Path(str(out_path)).with_suffix(".tmp.png").unlink(missing_ok=True)
+        except OSError:
+            pass
         return None
 
 

@@ -53,13 +53,32 @@ _NUM_RE = re.compile(r"^\d+$")
 # 命令解析遇到该形态时提取 QQ 号作为目标用户（兼容全角括号）
 AT_RENDER_RE = re.compile(r"^@.+?[(（](\d{1,20})[)）]$")
 
+
+def _match_at_token(tokens: list[str], i: int) -> tuple[str, int] | None:
+    """tokens[i] 起解析 At 渲染文本「@名字(QQ号)」，返回 (QQ号, 消费到的下标)。
+
+    群名片含空格（如「张 三」「张三 | 摸鱼中」）时，平台渲染出的 At 文本
+    会被框架按空格切成多段参数，单 token 匹配不上——此处向后合并直到命中形态。
+    """
+    t = str(tokens[i])
+    m = AT_RENDER_RE.match(t)
+    if m:
+        return m.group(1), i + 1
+    if t.startswith("@"):
+        for j in range(i + 1, len(tokens)):
+            m = AT_RENDER_RE.match(" ".join(str(x) for x in tokens[i : j + 1]))
+            if m:
+                return m.group(1), j + 1
+    return None
+
+
 _USER_ERRORS = (ServiceError, DatabaseNotAvailable, SchemaIncompatible)
 
 @register(
     PLUGIN_NAME,
     "OborozukiNoYume",
     "聊天洞察：基于 ChatLogger 的群聊统计、发言排行、词云关键词、用户画像（只读）",
-    "0.5.3",
+    "0.5.4",
 )
 class ChatInsight(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -168,6 +187,8 @@ class ChatInsight(Star):
             low = t.lower()
             if low in ("user", "用户", "u", "谁") and i + 1 < len(tokens):
                 v = str(tokens[i + 1])
+                if (m := AT_RENDER_RE.match(v)):  # 「用户 @名字(QQ号)」形态：提取 QQ 号
+                    v = m.group(1)
                 user_id = "me" if v.lower() in ("me", "我") else v
                 i += 2
             elif low in ("me", "我", "自己"):
@@ -186,13 +207,12 @@ class ChatInsight(Star):
                 top_n = int(t)
                 i += 1
             else:
-                m = AT_RENDER_RE.match(t)
+                m = _match_at_token(tokens, i)
                 if m:  # At 段被渲染成 "@名字(QQ号)" 混入参数：提取 QQ 号为目标
-                    user_id = m.group(1)
-                    i += 1
+                    user_id, i = m
                 else:
                     raise ServiceError(
-                        f"无法识别的参数「{t}」。支持：用户 <QQ号|我>（或 user me）、全群、"
+                        f"无法识别的参数「{t}」。支持：@某人、用户 <QQ号|我>（或 user me）、全群、"
                         "群 <群号>（或 group）、时间（今日/昨日/本周/上月/本季度/半年/今年/历史/N天）、条数（数字）。"
                     )
         return user_id, group_id, time_spec, top_n, all_group
@@ -218,22 +238,21 @@ class ChatInsight(Star):
         gid = event.get_group_id()
         return str(gid) if gid else None
 
-    def _resolve_target(self, event: AstrMessageEvent, arg: str = "") -> tuple[str, bool]:
-        """(目标 user_id, 是否查询他人)。At 段 > 纯数字参数 > 发送者自己。
+    def _resolve_target(self, event: AstrMessageEvent) -> tuple[str, bool]:
+        """(目标 user_id, 是否查询他人)。At 段 > 发送者自己。
 
-        跳过指向 Bot 自身的 At 段——"@Bot 用户画像 me" 是唤醒方式，
-        不是要查 Bot 的画像（Bot 消息被 sender_type 过滤，永远是空画像）。
+        跳过指向 Bot 自身与「全体成员」的 At 段——"@Bot 用户画像 me" 是唤醒方式，
+        不是要查 Bot 的画像（Bot 消息被 sender_type 过滤，永远是空画像）；
+        @全体成员不是可查询的用户目标。
         """
-        sender = str(event.get_sender_id() or "unknown")
+        sender = str(event.get_sender_id() or "")
         self_id = str(event.get_self_id() or "")
         for comp in event.message_obj.message or []:
             if isinstance(comp, At) and comp.qq:
                 tid = str(comp.qq)
-                if tid == self_id:
-                    continue  # @Bot 是唤醒段，不是查询目标
+                if tid in (self_id, "all"):
+                    continue  # @Bot 是唤醒段；@全体成员不是用户目标
                 return (tid, tid != sender)
-        if arg and arg.isdigit() and arg != sender:
-            return arg, True
         return sender, False
 
     @staticmethod
@@ -246,7 +265,7 @@ class ChatInsight(Star):
         return None
 
     def _parse_user_tokens(self, event: AstrMessageEvent, tokens: list[str]):
-        """用户画像参数解析：user <id|me> / 时间 / At 渲染文本。
+        """用户画像参数解析：user <id|me> / 裸 QQ 号 / 时间 / At 渲染文本。
         返回 (user_id 显式值或 None, time_spec)。"""
         user_id = None
         time_spec = None
@@ -256,20 +275,24 @@ class ChatInsight(Star):
             low = t.lower()
             if low in ("user", "用户", "u", "谁") and i + 1 < len(tokens):
                 v = str(tokens[i + 1])
+                if (m := AT_RENDER_RE.match(v)):  # 「用户 @名字(QQ号)」形态：提取 QQ 号
+                    v = m.group(1)
                 user_id = event.get_sender_id() if v.lower() in ("me", "我") else v
                 i += 2
             elif low in TIME_WORDS or t in TIME_WORDS or _TIME_RE.match(t):
                 time_spec = t
                 i += 1
+            elif _NUM_RE.match(t):
+                user_id = t  # 裸数字视为 QQ 号：/用户画像 12345
+                i += 1
             else:
-                m = AT_RENDER_RE.match(t)
+                m = _match_at_token(tokens, i)
                 if m:  # At 段被渲染成 "@名字(QQ号)" 混入参数：提取 QQ 号为目标
-                    user_id = m.group(1)
-                    i += 1
+                    user_id, i = m
                 else:
                     raise ServiceError(
                         f"无法识别的参数「{t}」。支持：@某人、用户 <QQ号|我>"
-                        "（或 user me）、时间（今日/本周/本月/今年/历史/N天）。"
+                        "（或 user me）、QQ 号、时间（今日/本周/本月/今年/历史/N天）。"
                     )
         return user_id, time_spec
 
@@ -281,8 +304,7 @@ class ChatInsight(Star):
         if explicit_uid is not None:
             uid, is_other = explicit_uid, explicit_uid != str(event.get_sender_id() or "")
         else:
-            arg = next((t for t in tokens if str(t).isdigit()), "")
-            uid, is_other = self._resolve_target(event, arg)
+            uid, is_other = self._resolve_target(event)
         err = self._guard_other(event, is_other)
         if err:
             return None, f"⛔ {err}"
@@ -310,9 +332,10 @@ class ChatInsight(Star):
             svc = self._svc()
             user_id, group_id, time_spec, top_n, all_group = self._parse_scope_tokens(tokens)
             user_id = self._resolve_user(event, user_id)
-            # @目标 优先：`@某人 /词云 7天` = 查被@者的词云
+            # 显式参数优先于消息里的 At 段：`/词云 全群 @某人` 中「全群」是明确意图；
+            # 无显式目标时 At 兜底（`@某人 /词云 7天` = 查被@者的词云）
             at_target = self._at_target(event)
-            if at_target:
+            if at_target and user_id is None and not all_group:
                 user_id = at_target
             # 默认查自己；「全群」或显式群号才是群维度词云
             if user_id is None and not all_group:
@@ -525,6 +548,9 @@ class ChatInsight(Star):
                     if remain <= 0:
                         break
                     await asyncio.sleep(min(remain, 300))
+                    # 中途关闭开关立即生效（不等到点）：外层检查在睡满目标前不再轮到
+                    if not bool(self.config.get("report_enabled", False)):
+                        break
                     # 醒来已到/过点：立即触发。必须先于重算——重算值对已过时刻
                     # 会顺延到下一周期，先重算就会把到点这一拍换成明天而永不触发。
                     if datetime.now(tz=svc.tz) >= target:
@@ -564,7 +590,10 @@ class ChatInsight(Star):
                         None, min_msgs, frequency,
                     )
                     if data is None:
-                        logger.info(f"[insight] 群报 {gid} 上周活跃度低于 {min_msgs}，跳过")
+                        logger.info(
+                            f"[insight] 群报 {gid} {report.PERIOD_LABEL[frequency]}活跃度"
+                            f"低于 {min_msgs}，跳过"
+                        )
                         continue
                     card = await cardrender.render_report_card(self, data)
                     if card:
@@ -595,7 +624,10 @@ class ChatInsight(Star):
                 logger.error(f"[insight] 群报 {gid} 生成异常: {e}", exc_info=True)
                 continue
             if built is None:
-                logger.info(f"[insight] 群报 {gid} 上周活跃度低于 {min_msgs}，跳过")
+                logger.info(
+                    f"[insight] 群报 {gid} {report.PERIOD_LABEL[frequency]}活跃度"
+                    f"低于 {min_msgs}，跳过"
+                )
                 continue
             title, text, image_path = built
             ok = await self._push_group(gid, title, text, image_path)

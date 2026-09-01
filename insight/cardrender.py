@@ -314,7 +314,7 @@ def build_report_card_data(service, group_id, sections, top_n=None,
             entries, total = [], 0
     rank_max = max((e.count for e in entries), default=0)
 
-    return {
+    card = {
         "group_name": _esc(group_name),
         "group_id": _esc(group_id),
         "avatar_url": _qq_group_avatar_url(group_id),
@@ -323,28 +323,31 @@ def build_report_card_data(service, group_id, sections, top_n=None,
         "range_label": s["range"].label,
         "span": s["span"],
         "generated_at": datetime.now(service.tz).strftime("%Y-%m-%d %H:%M"),
-        "stats": [
+    }
+    if "summary" in sections:
+        # 总览区随 report_sections 门控，与文本路径的分节开关同一语义
+        card["stats"] = [
             {"label": "消息", "value": f"{s['messages']:,}", "sub": ""},
             {"label": "日均", "value": f"{s['avg_per_day']:.1f}", "sub": ""},
             {"label": "活跃人数", "value": str(s["active_users"]), "sub": "发过至少 1 条"},
             {"label": "峰值日", "value": str(s["peak_messages"]), "sub": s["peak_date"]},
-        ],
+        ]
         # 峰值日独立命名键：模板正文按名引用，避免 stats 位置重排后静默错值
-        "peak_date": s["peak_date"],
-        "peak_value": str(s["peak_messages"]),
-        "days_with_data": f"{s['days_with_data']}/{s['span_days']} 天",
-        "rank_total": total,
-        "rank_rows": [
-            {
-                "i": i,
-                "name": _esc(e.user_name if e.user_name and e.user_name != e.user_id else e.user_id),
-                "count": e.count,
-                "pct": f"{e.ratio * 100:.1f}%" if total else "-",
-                "wpx": round(e.count / rank_max * 100) if rank_max else 0,
-            }
-            for i, e in enumerate(entries, 1)
-        ],
-    }
+        card["peak_date"] = s["peak_date"]
+        card["peak_value"] = str(s["peak_messages"])
+        card["days_with_data"] = f"{s['days_with_data']}/{s['span_days']} 天"
+    card["rank_total"] = total
+    card["rank_rows"] = [
+        {
+            "i": i,
+            "name": _esc(e.user_name if e.user_name and e.user_name != e.user_id else e.user_id),
+            "count": e.count,
+            "pct": f"{e.ratio * 100:.1f}%" if total else "-",
+            "wpx": round(e.count / rank_max * 100) if rank_max else 0,
+        }
+        for i, e in enumerate(entries, 1)
+    ]
+    return card
 
 
 async def render_report_card(star, data: dict) -> str | None:
@@ -386,7 +389,8 @@ def build_group_card_data(group_id: str, p: dict, tz: ZoneInfo) -> dict:
         if v > 0
     ]
     span_days = max(
-        (p["last_seen"] - p["first_seen"]) // 86400 + 1
+        (datetime.fromtimestamp(p["last_seen"], tz).date()
+         - datetime.fromtimestamp(p["first_seen"], tz).date()).days + 1
         if p["first_seen"] and p["last_seen"] else 1,
         1,
     )

@@ -23,7 +23,6 @@ from .timeutil import (
     TimeRangeError,
     describe_span,
     resolve_range,
-    tz_offset_seconds,
 )
 
 
@@ -132,9 +131,6 @@ class StatisticsService:
         except TimeRangeError as e:
             raise ServiceError(str(e)) from e
 
-    def _off(self, r: TimeRange) -> int:
-        return tz_offset_seconds(self.tz, r.start_ts)
-
     def _require_group(self, group_id) -> str:
         gid = str(group_id) if group_id not in (None, "") else ""
         if not gid:
@@ -177,9 +173,15 @@ class StatisticsService:
         if total == 0:
             raise ServiceError(f"{r.label}（{describe_span(r)}）该群没有用户消息记录。")
         active = self.repo.get_active_user_count(r, group_id=gid)
-        by_day = self.repo.get_activity_by_day(r, gid, offset_seconds=self._off(r))
-        # 「历史」区间按有记录的天数算日均，避免除以 1970 年以来的天数
-        days = max(1, len(by_day)) if r.kind == "all" else max(1, (r.end_ts - r.start_ts) // 86400)
+        by_day = self.repo.get_activity_by_day(r, gid)
+        # 「历史」区间按有记录的天数算日均，避免除以 1970 年以来的天数；
+        # 其余区间按本地自然日跨度（墙钟）——秒差整除在 DST 春令时窗口会少算一天
+        if r.kind == "all":
+            days = max(1, len(by_day))
+        else:
+            first_d = datetime.fromtimestamp(r.start_ts, self.tz).date()
+            last_d = datetime.fromtimestamp(max(r.start_ts, r.end_ts - 1), self.tz).date()
+            days = max(1, (last_d - first_d).days + 1)
         peak = max(by_day, key=lambda d: d.messages, default=None)
         return {
             "range": r,
@@ -196,8 +198,7 @@ class StatisticsService:
     def rank(self, r: TimeRange, group_id, top_n: int | None = None) -> tuple[list[RankEntry], int]:
         gid = self._require_group(group_id)
         n = top_n or self.default_top_n
-        entries = self.repo.get_message_rank(r, group_id=gid, limit=n)
-        total = self.repo.get_message_count(r, group_id=gid)
+        entries, total = self.repo.get_message_rank(r, group_id=gid, limit=n)
         if not entries:
             raise ServiceError(f"{r.label}（{describe_span(r)}）该群没有用户发言记录。")
         return entries, total
@@ -246,11 +247,10 @@ class StatisticsService:
     def user_summary(self, r: TimeRange, user_id, group_id=None) -> dict:
         """综合卡片：基础 + 活跃摘要 + 风格摘要。"""
         uid = self._require_user(user_id, group_id)
-        off = self._off(r)
-        basic = self.repo.get_user_basic(r, uid, group_id, off)
+        basic = self.repo.get_user_basic(r, uid, group_id)
         if basic["message_count"] == 0:
             raise ServiceError(f"{r.label}（{describe_span(r)}）范围内该用户没有消息记录。")
-        act = self.repo.get_user_activity(r, uid, group_id, off)
+        act = self.repo.get_user_activity(r, uid, group_id)
         style = self.repo.get_user_style(r, uid, group_id, limit=self.max_messages_scan)
         lengths = sorted(style["lengths"])
         hours = act["hour_counts"]
@@ -275,7 +275,7 @@ class StatisticsService:
     def user_activity(self, r: TimeRange, user_id, group_id=None) -> dict:
         """活跃规律：24h 分布 / 昼夜 / 工作日周末 / 峰值 / 连续活跃。"""
         uid = self._require_user(user_id, group_id)
-        raw = self.repo.get_user_activity(r, uid, group_id, self._off(r))
+        raw = self.repo.get_user_activity(r, uid, group_id)
         hours = raw["hour_counts"]
         total = sum(hours)
         if total == 0:
@@ -399,7 +399,7 @@ class StatisticsService:
         """Bot 互动画像。私聊统计恒为全局口径（输出注明）。"""
         uid = self._require_user(user_id, group_id)
         p = self.repo.get_user_bot_interaction(
-            r, uid, group_id, bot_ids=self.repo.bot_self_ids(), offset_seconds=self._off(r)
+            r, uid, group_id, bot_ids=self.repo.bot_self_ids()
         )
         if p["group_message_count"] == 0 and p["private_message_count"] == 0:
             raise ServiceError(f"{r.label}（{describe_span(r)}）范围内该用户没有消息记录。")
@@ -440,22 +440,23 @@ class StatisticsService:
             int((day0 + timedelta(days=1)).timestamp()),
             tz, f"近{GROUP_TREND_DAYS}天", "ndays",
         )
+        # 关键词窗与 trend_r 同为墙钟口径（day0 锚定）：秒减法在 DST 切换日会混入前一天的最后一小时
+        kw_start = datetime.combine(
+            now.date() - timedelta(days=GROUP_KEYWORD_WINDOW_DAYS - 1),
+            datetime.min.time(), tzinfo=tz,
+        )
         kw_r = TimeRange(
-            trend_r.end_ts - GROUP_KEYWORD_WINDOW_DAYS * 86400, trend_r.end_ts,
+            int(kw_start.timestamp()), trend_r.end_ts,
             tz, f"近{GROUP_KEYWORD_WINDOW_DAYS}天", "ndays",
         )
         name, msg_count, members, first, last = self.repo.get_group_meta(gid)
         if msg_count == 0:
             raise ServiceError(f"群 {gid} 在 ChatLogger 中还没有聊天记录。")
-        hour_counts = self.repo.get_activity_by_hour(
-            trend_r, gid, offset_seconds=self._off(trend_r)
-        )
-        by_day = self.repo.get_activity_by_day(
-            trend_r, gid, offset_seconds=self._off(trend_r)
-        )
+        hour_counts = self.repo.get_activity_by_hour(trend_r, gid)
+        by_day = self.repo.get_activity_by_day(trend_r, gid)
         peak = sorted((h for h in range(24) if hour_counts[h] > 0), key=lambda h: -hour_counts[h])[:3]
         peak.sort()
-        top_active = self.repo.get_message_rank(trend_r, gid, limit=10)
+        top_active, _trend_total = self.repo.get_message_rank(trend_r, gid, limit=10)
         kw_counter = self._keywords(kw_r, group_id=gid)
         media = self.repo.get_media_stats(trend_r, gid)
         pairs = self.repo.get_group_reply_pairs(gid, trend_r)

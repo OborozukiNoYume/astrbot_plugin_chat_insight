@@ -6,9 +6,7 @@ import pytest
 from conftest import NOW, TZ, ts
 from insight.timeutil import (
     TimeRangeError,
-    day_bucket_to_date,
     resolve_range,
-    tz_offset_seconds,
 )
 
 
@@ -144,8 +142,3 @@ def test_zongbang_alias_is_all():
     assert r.kind == "all" and r.label == "历史"
 
 
-def test_tz_offset_and_day_bucket_roundtrip():
-    off = tz_offset_seconds(TZ, NOW)
-    assert off == 8 * 3600
-    bucket = (NOW + off) // 86400
-    assert day_bucket_to_date(bucket, TZ, off) == "2026-08-15"
