@@ -128,4 +128,4 @@ python -m pytest tests/ -q：契约/时区/口径/画像/群报/缓存/坏JSON/�
 
 ## License
 
-AGPL-3.0
+MIT
