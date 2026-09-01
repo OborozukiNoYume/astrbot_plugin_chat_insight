@@ -28,7 +28,7 @@ from astrbot.api.star import Context, Star, register
 from astrbot.core.message.message_event_result import MessageChain
 from astrbot.core.utils.astrbot_path import get_astrbot_data_path
 
-from .insight import cardrender, colloquial, render, report
+from .insight import cardrender, render, report
 from .insight.cache import TTLCache
 from .insight.db import ChatlogDB, DatabaseNotAvailable, SchemaIncompatible
 from .insight.repository import ChatlogRepository
@@ -49,20 +49,17 @@ TIME_WORDS = {
 }
 _TIME_RE = re.compile(r"^(?:近|最近)?\d+[天日dD]$")
 _NUM_RE = re.compile(r"^\d+$")
+# 平台把消息链里的 At 段渲染成 "@名字(QQ号)" 文本混入命令参数；
+# 命令解析遇到该形态时提取 QQ 号作为目标用户（兼容全角括号）
+AT_RENDER_RE = re.compile(r"^@.+?[(（](\d{1,20})[)）]$")
 
 _USER_ERRORS = (ServiceError, DatabaseNotAvailable, SchemaIncompatible)
-
-# 本插件命令词：带唤醒前缀/@Bot 时让命令通道处理，避免双响应
-_PLUGIN_COMMAND_WORDS = frozenset(
-    {"发言榜", "发言排行", "rank", "词云", "wordcloud",
-     "用户画像", "profile", "群画像", "group_profile", "画像维护", "insight-admin"}
-)
 
 @register(
     PLUGIN_NAME,
     "OborozukiNoYume",
     "聊天洞察：基于 ChatLogger 的群聊统计、发言排行、词云关键词、用户画像（只读）",
-    "0.5.2",
+    "0.5.3",
 )
 class ChatInsight(Star):
     def __init__(self, context: Context, config: AstrBotConfig):
@@ -70,7 +67,6 @@ class ChatInsight(Star):
         self.config = config
         self.service: StatisticsService | None = None
         self._init_error: str | None = None
-        self._wc_trigger_enabled = True
         self._profile_scope = "current_group"
         self._render_mode = "text"
         self.cache = TTLCache(0)
@@ -114,7 +110,6 @@ class ChatInsight(Star):
                     self.config.get("wordcloud_retention_days", 7)
                 ),
             )
-            self._wc_trigger_enabled = bool(self.config.get("wordcloud_trigger_enabled", True))
             self._profile_scope = str(self.config.get("profile_scope", "current_group"))
             self._render_mode = str(self.config.get("render_mode", "text") or "text")
             self.cache = TTLCache(
@@ -191,7 +186,7 @@ class ChatInsight(Star):
                 top_n = int(t)
                 i += 1
             else:
-                m = colloquial.AT_RENDER_RE.match(t)
+                m = AT_RENDER_RE.match(t)
                 if m:  # At 段被渲染成 "@名字(QQ号)" 混入参数：提取 QQ 号为目标
                     user_id = m.group(1)
                     i += 1
@@ -267,8 +262,8 @@ class ChatInsight(Star):
                 time_spec = t
                 i += 1
             else:
-                m = colloquial.AT_RENDER_RE.match(t)
-                if m:  # At 段被平台渲染成 "@名字(QQ号)" 混入参数：提取 QQ 号为目标
+                m = AT_RENDER_RE.match(t)
+                if m:  # At 段被渲染成 "@名字(QQ号)" 混入参数：提取 QQ 号为目标
                     user_id = m.group(1)
                     i += 1
                 else:
@@ -621,75 +616,6 @@ class ChatInsight(Star):
             except Exception as e:
                 logger.warning(f"[insight] 群报经 {umo} 推送异常: {e}")
         return False
-
-    def _wake_prefixes(self) -> list[str]:
-        """AstrBot 配置的唤醒前缀列表（可多个、可变更，禁止硬编码）。
-
-        框架唤醒后会从 message_str 剥离前缀；未唤醒消息保留原样。
-        """
-        try:
-            prefixes = self.context.get_config()["wake_prefix"]
-        except Exception as e:
-            logger.warning(f"[insight] 读取唤醒前缀配置失败，回退 '/': {e}")
-            prefixes = ["/"]
-        if isinstance(prefixes, str):
-            prefixes = [prefixes]
-        return [str(p) for p in prefixes if p]
-
-    # ---------- 口语触发：个人词云（我的词云 / @某人 词云） ----------
-
-    @filter.event_message_type(filter.EventMessageType.ALL, priority=99)
-    async def wordcloud_colloquial(self, event: AstrMessageEvent):
-        """口语触发：@Bot 我的词云 / @Bot @某人 历史词云（均需 @机器人或唤醒前缀）"""
-        try:
-            if not self._wc_trigger_enabled or self.service is None:
-                return
-            if str(event.get_sender_id() or "") == str(event.get_self_id() or ""):
-                return
-            text = (event.message_str or "").strip()
-            if not text:
-                return
-            first = text.split()[0]
-            if first in _PLUGIN_COMMAND_WORDS:
-                return  # 命令通道处理，避免双响应
-            hit = colloquial.match_wordcloud(text)
-            if hit is None:
-                return
-            personal, spec, top_n = hit
-            if not event.is_at_or_wake_command:
-                # 框架规则：群聊里首段 @普通人 的消息即使带唤醒前缀也不唤醒
-                # （防止抢答别人被 @ 的消息），「@某人 /词云」因此进不了命令通道，
-                # 由这里的口语兜底放行。
-                # 「@某人 词云」「@某人 /词云」「@某人 历史词云」是明确的指向性
-                # 请求，放行；判定用配置的真实唤醒前缀剥离（前缀可变更，不硬编码）；
-                # 其余未唤醒消息一律不响应，防止日常聊天误触。
-                stripped_texts = {text, text.lower()}
-                for p in self._wake_prefixes():
-                    if p and text.startswith(p):
-                        s = text[len(p):].strip()
-                        stripped_texts.update({s, s.lower()})
-                # 首词判定跳过 At 渲染文本（At 在前语序）；「/词云」形态在此剥前缀
-                firsts = {colloquial.first_meaningful(t) for t in stripped_texts}
-                for w in list(firsts):
-                    for p in self._wake_prefixes():
-                        if p and w.startswith(p):
-                            firsts.add(w[len(p):])
-                if not any(colloquial.is_wordcloud_lead(w) for w in firsts):
-                    return
-            if personal:
-                tokens = ["user", "me", spec]
-            else:
-                target_qq = self._at_target(event)
-                if not target_qq:
-                    return  # 裸「词云」无 @目标：不触发，走斜杠命令
-                tokens = ["user", target_qq, spec]
-            if top_n:
-                tokens.append(str(top_n))
-            event.stop_event()  # 阻断后续（含 LLM）
-            async for r in self._wordcloud_impl(event, tokens):
-                yield r
-        except Exception as e:
-            logger.error(f"[insight] 词云口语触发失败: {e}", exc_info=True)
 
     @staticmethod
     def _at_target(event: AstrMessageEvent) -> str | None:

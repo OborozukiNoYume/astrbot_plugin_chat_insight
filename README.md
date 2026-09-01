@@ -25,13 +25,11 @@ AstrBot → ChatLogger → chatlog.db → Chat Insight（本插件，只读）
 | 命令 | 别名 | 参数 | 说明 |
 |---|---|---|---|
 | `/发言榜` | `rank` / `发言排行` | `[群 <群号>] [时间] [N]` | 发言榜：数量 / 排名 / 占比 |
-| `/词云` | `wordcloud` | `[时间] [N]`（默认自己） | 个人词云；查他人按自然顺序任选：`@某人 词云 [时间]`、`@某人 <时间>词云`（如 `@某人 历史词云`）、`@某人 /词云 [时间]`、`/词云 @某人 [时间]`（At 在前的形态走口语触发兜底——框架对首段 @普通人的消息不唤醒，本插件对这类指向性请求放行）；`/词云 全群 [时间]` 查整群（兼容 `user me` / `group` 英文写法） |
+| `/词云` | `wordcloud` | `[时间] [N]`（默认自己） | 个人词云；查他人：`/词云 @某人 [时间]`（At 在前语序不唤醒，须用本形态）；`/词云 全群 [时间]` 查整群（兼容 `user me` / `group` 英文写法） |
 | `/用户画像` | `profile` | `[@某人] [用户 <QQ号\|我>] [时间]` | 完整用户画像，六视图合并输出：综合 / 活跃 / 关键词 / 风格 / 互动 / 机器人（查他人需管理员） |
 | `/群画像` | `group_profile` | — | 当前群画像（发言成员数 ≠ 群成员总数） |
 
 **管理命令组**：`/画像维护`（别名 `insight-admin`，仅管理员）——`状态`（数据源契约检查）、`刷新`（清缓存并重识别 Bot ID），裸调用自动列出子命令。
-
-个人词云口语触发（默认开启，`wordcloud_trigger_enabled` 可关）：「我的词云」类形态需 @机器人或唤醒前缀——`@机器人 我的词云`、`@机器人 我的历史词云`；「@某人 词云 / @某人 /词云 / @某人 历史词云」为指向性请求，免唤醒直接响应；裸「词云」与普通聊天一律不响应。
 
 ## 统计口径
 
@@ -66,7 +64,6 @@ AstrBot → ChatLogger → chatlog.db → Chat Insight（本插件，只读）
 | `wordcloud_enabled` | `true` | 关闭后 `/词云` 输出文字版词频 |
 | `font_path` | 空（内置字体） | 词云字体；内置 `assets/fonts/NotoSansSC.ttf` |
 | `stopwords_path` / `extra_stopwords` | 空 / `[]` | 自定义停用词 |
-| `wordcloud_trigger_enabled` | `true` | 个人词云口语触发开关 |
 | `wordcloud_retention_days` | `7` | 词云 PNG 保留天数，生成时自动清理过期图，`0` 关闭 |
 | `exclude_waked_messages` | `true` | 群统计排除唤醒消息 |
 | `profile_scope` | `current_group` | 用户画像范围（`all` 为全部会话） |
@@ -127,7 +124,7 @@ AstrBot → ChatLogger → chatlog.db → Chat Insight（本插件，只读）
 python -m pytest tests/ -q：契约/时区/口径/画像/群报/缓存/坏JSON/边界
 ```
 
-包结构：`insight/`（纯 Python）：`db`（只读连接）· `timeutil`（唯一时间实现）· `textproc`（清洗/分词）· `repository`（全部 SQL）· `service`（业务聚合）· `render`（文本渲染与降级）· `cardrender`（HTML 卡片渲染）· `report`（群报区间与拼装）· `colloquial`（口语触发匹配）· `cache`（画像 TTL 缓存）。
+包结构：`insight/`（纯 Python）：`db`（只读连接）· `timeutil`（唯一时间实现）· `textproc`（清洗/分词）· `repository`（全部 SQL）· `service`（业务聚合）· `render`（文本渲染与降级）· `cardrender`（HTML 卡片渲染）· `report`（群报区间与拼装）· `cache`（画像 TTL 缓存）。
 
 ## License
 

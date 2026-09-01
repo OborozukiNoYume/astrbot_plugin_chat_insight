@@ -53,12 +53,6 @@
     "default": [],
     "hint": "在列表中追加不想出现在词云/关键词里的词"
   },
-  "wordcloud_trigger_enabled": {
-    "description": "启用个人词云口语触发",
-    "type": "bool",
-    "default": true,
-    "hint": "开启后「我的词云」「我的历史词云」「@某人 词云」「@某人 历史词云」可直接触发个人词云；「我的」类形态仍需 @机器人或唤醒前缀，「@某人」指向性语序免唤醒"
-  },
   "wordcloud_retention_days": {
     "description": "词云图片保留天数",
     "type": "int",
